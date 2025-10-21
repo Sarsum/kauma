@@ -1,0 +1,9 @@
+#!/bin/bash
+# dirname outputs relative directory of the build script
+# pwd the current location
+# result: location of my repository
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+# create symlink from vendored packages to mounted kauma directory for cargo build
+ln -s /usr/local/rust/vendor/ $SCRIPT_DIR/vendor
+cd $SCRIPT_DIR
+cargo build --release --offline
