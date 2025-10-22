@@ -4,7 +4,6 @@ pub(crate) mod utils;
 use std::{env, fs::File};
 
 use anyhow::Result;
-use num::{BigInt, Num};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -30,12 +29,6 @@ fn main() {
 
     if let Some(testcases) = get_exercises_from_file(input_path) {
         run_exercises(testcases);
-    }
-
-    let num = BigInt::from_str_radix("-80000001", 16);
-    match num {
-        Ok(number) => println!("{}", number.to_str_radix(10)),
-        Err(err) => println!("{}", err.to_string())
     }
 }
 
