@@ -2,41 +2,34 @@ use anyhow::{anyhow, Result};
 use num::{BigInt, Zero};
 use serde_json::{json, Value};
 
-use crate::utils::{parse_number, to_number};
+use crate::{actions::{ActionNumber}, utils::{to_number}};
 
-pub fn run_action(arguments: Value) -> Result<Value> {
-    super::super::utils::util();
 
-    if let Some(result) = calculate(arguments)  {
-        let ret_value = to_number(result);
-        return Ok(json!({"answer": ret_value}));
-    }
-    Err(anyhow!("Action did not return a number"))
-}
+pub fn run_action(lhs_wrapped: ActionNumber, op: String, rhs_wrapped: ActionNumber) -> Result<Value> {
+    let lhs = lhs_wrapped.0;
+    let rhs = rhs_wrapped.0;
+    let calc = match op.as_str() {
+        "+" => Some(lhs + rhs),
+        "-" => Some(lhs - rhs),
+        "*" => Some(lhs * rhs),
+        "/" => {
+            if rhs != BigInt::zero() {
+                Some(lhs / rhs)
+            } else {
+                None
+            }
+        },
+        _ => None
+    };
 
-fn calculate(arguments: Value) -> Option<BigInt> {
-    let lhs_raw = &arguments["lhs"];
-    let op_raw = &arguments["op"];
-    let rhs_raw = &arguments["rhs"];
-
-    let lhs_parsed = parse_number(lhs_raw);
-    let op_parsed = op_raw.as_str();
-    let rhs_parsed = parse_number(rhs_raw);
-
-    if let (Some(lhs), Some(op), Some(rhs)) = (lhs_parsed, op_parsed, rhs_parsed) {
-        return match op {
-            "+" => Some(lhs + rhs),
-            "-" => Some(lhs - rhs),
-            "*" => Some(lhs * rhs),
-            "/" => {
-                if rhs != BigInt::zero() {
-                    return Some(lhs / rhs)
-                }
-                return None
-            },
-            _ => None
+    return match calc {
+        Some(result) => {
+            let ret_value = to_number(result);
+            Ok(json!({"answer": ret_value}))
         }
-    }
-
-    None
+        None => {
+            Err(anyhow!("Action did not return a number"))
+        }
+    };
+    
 }

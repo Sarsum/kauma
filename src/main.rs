@@ -1,21 +1,17 @@
 mod actions;
 pub(crate) mod utils;
 
-use std::{env, fs::File};
+use std::{collections::HashMap, env, fs::File, io::BufReader};
 
 use anyhow::Result;
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{json};
 
-#[derive(Deserialize)]
-pub struct TestcaseContent {
-    action: String,
-    arguments: Value
-}
+use crate::actions::{TryAction};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct TestcaseFile {
-    testcases: Map<String, Value>
+    testcases: HashMap<String, TryAction>
 }
 
 fn main() {
@@ -28,14 +24,14 @@ fn main() {
     //run_exercise_file(input_path);
 
     if let Some(testcases) = get_exercises_from_file(input_path) {
-        run_exercises(testcases);
+        run_exercises(testcases, input_path);
     }
 }
 
 fn get_exercises_from_file(filename: &String) -> Option<TestcaseFile> {
     match File::open(filename) {
         Ok(file) => {
-            let parsed: Result<TestcaseFile, serde_json::Error> = serde_json::from_reader(file);
+            let parsed: Result<TestcaseFile, serde_json::Error> = serde_json::from_reader(BufReader::new(file));
             match parsed {
                 Ok(testcases) => return Some(testcases),
                 Err(error) => {
@@ -51,28 +47,25 @@ fn get_exercises_from_file(filename: &String) -> Option<TestcaseFile> {
     return None
 }
 
-fn run_exercises(testcases: TestcaseFile) {
+fn run_exercises(testcases: TestcaseFile, file_name: &String) {
     for (name, content) in testcases.testcases {
-        let parsed_case: Result<TestcaseContent, serde_json::Error> = serde_json::from_value(content);
-        match parsed_case {
-            Ok(case) => run_exercise(name, case),
-            Err(error) => {
-                eprintln!("Error parsing case {}, error: {}", name, error.to_string())
+        match content {
+            TryAction::Ok(action) => {
+                match actions::run_action(action) {
+                    Ok(result) => {
+                        let json = json!({"id": name, "reply": result});
+                        if let Ok(json_value) = serde_json::to_string(&json) {
+                            println!("{}", json_value);
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("File \"{}\" Case \"{}\" failed with the error: {}", file_name, name, error.to_string())
+                    }
+                }
             }
-        }
-    }
-}
-
-fn run_exercise(case_name: String, case: TestcaseContent) {
-    match actions::run_action(case) {
-        Ok(result) => {
-            let json = json!({"id": case_name, "reply": result});
-            if let Ok(json_value) = serde_json::to_string(&json) {
-                println!("{}", json_value);
+            TryAction::Err(error) => {
+                eprintln!("File \"{}\" Case \"{}\" failed to parse action, error: {}", file_name, name, error.to_string())
             }
-        }
-        Err(error) => {
-            eprintln!("Case {} failed with the error: {}", case_name, error.to_string())
         }
     }
 }
