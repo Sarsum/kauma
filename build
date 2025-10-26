@@ -7,3 +7,5 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ln -s /usr/local/rust/vendor/ $SCRIPT_DIR/vendor
 cd $SCRIPT_DIR
 cargo build --release --offline
+# create symlink to kauma release binary to reduce bash file overhead
+ln -s target/release/kauma kauma
