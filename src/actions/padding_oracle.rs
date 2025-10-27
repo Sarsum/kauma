@@ -24,11 +24,7 @@ impl PaddingOracleClient {
     }
 
     fn connect(hostname: &str, port: u16) -> Result<Self> {
-        let mut address = String::new();
-        address.push_str(&hostname);
-        address.push(':');
-        address.push_str(&port.to_string());
-        let stream = TcpStream::connect(address.as_str())
+        let stream = TcpStream::connect((hostname, port))
             .map_err(|e| anyhow!("Error establishing tcp connection: {}", e))?;
         Ok(Self {stream: stream})
     }
@@ -39,7 +35,6 @@ impl PaddingOracleClient {
             let temp = stream.write(&data[written..]).map_err(|e| anyhow!("Error writing data to tcp stream: {}", e))?;
             written += temp;
         }
-        //stream.write_all(&data).map_err(|e| anyhow!("Error writing data to tcp stream: {}", e))?;
         if force_flush {
             return stream.flush().map_err(|e| anyhow!("Error flushing tcp stream write {}", e))
         }
