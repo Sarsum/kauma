@@ -1,0 +1,17 @@
+name: Kauma regression test
+on: ["pull_request", "push"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: ghcr.io/johndoe31415/labwork-docker:master
+    steps:
+      - name: Setup rust # Somehow Github does not find the provided Rust version in the container image 
+        run: rustup default stable
+      - uses: actions/checkout@v5
+        with:  
+          submodules: true # pull https://github.com/Sarsum/TINF23CS-kauma-tests/ into testing/
+      - name: Build kauma binary
+        run: "$GITHUB_WORKSPACE/build"
+      - name: Run tests from testcase repository
+        run: python3 $GITHUB_WORKSPACE/testing/RunTests.py $GITHUB_WORKSPACE/kauma
