@@ -4,16 +4,24 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use num::{BigInt};
 use serde::{Deserialize, Deserializer, de};
 use serde_json::Value;
-use anyhow::Result;
+use anyhow::{Result};
 
 mod calc;
 mod padding_oracle;
+mod gf_actions;
 
 #[derive(Debug)]
 pub struct ActionNumber(BigInt);
 
 #[derive(Debug)]
 pub struct ActionBytes(Vec<u8>);
+
+#[derive(Debug)]
+pub struct ActionGfU128(u128);
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all="snake_case")]
+pub enum ActionPoly { P1, P2 }
 
 #[derive(Deserialize, Debug)]
 #[serde(tag="action", content="arguments", rename_all="snake_case")]
@@ -29,6 +37,33 @@ pub enum Action {
         key_id: ActionNumber,
         iv: ActionBytes,
         ciphertext: ActionBytes
+    },
+    GfMul {
+        a: ActionGfU128,
+        b: ActionGfU128,
+        poly: ActionPoly
+    },
+    GfPow {
+        b: ActionGfU128,
+        e: ActionNumber,
+        poly: ActionPoly
+    },
+    GfInv {
+        x: ActionGfU128,
+        poly: ActionPoly
+    },
+    GfDiv {
+        a: ActionGfU128,
+        b: ActionGfU128,
+        poly: ActionPoly
+    },
+    GfSqrt {
+        x: ActionGfU128,
+        poly: ActionPoly
+    },
+    GfDivmod {
+        a: ActionGfU128,
+        b: ActionGfU128
     }
 }
 
@@ -46,6 +81,12 @@ pub fn run_action(action: Action) -> Result<Value> {
         Action::Calc { lhs, op, rhs } => calc::run_action(lhs, op, rhs),
         Action::PaddingOracle { hostname, port, key_id, iv, ciphertext }
             => padding_oracle::run_action(hostname, port.0, key_id.0, iv.0, ciphertext.0),
+        Action::GfMul { a, b, poly } => gf_actions::run_gf_mul(a.0, b.0, poly),
+        Action::GfPow { b, e, poly } => gf_actions::run_gf_pow(b.0, e.0, poly),
+        Action::GfInv { x, poly } => gf_actions::run_gf_inv(x.0, poly),
+        Action::GfDiv { a, b, poly } => gf_actions::run_gf_div(a.0, b.0, poly),
+        Action::GfSqrt { x, poly } => gf_actions::run_gf_sqrt(x.0, poly),
+        Action::GfDivmod { a, b } => gf_actions::run_gf_divmod(a.0, b.0),
     }
 }
 
@@ -118,6 +159,44 @@ impl<'de> Deserialize<'de> for ActionBytes {
             where E: de::Error {
                 return match BASE64_STANDARD.decode(s) {
                     Ok(bytes) => Ok(ActionBytes(bytes)),
+                    Err(error) => {
+                        eprintln!("Failed to parse bytes, error: {}", error.to_string());
+                        Err(E::custom(error.to_string()))
+                    }
+                };
+            }
+        }
+
+        deserializer.deserialize_any(V)
+    }
+}
+
+impl<'de> Deserialize<'de> for ActionGfU128 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct V;
+
+        impl<'de> de::Visitor<'de> for V {
+            type Value = ActionGfU128;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(r#"String containing base64 encoded data"#)
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where E: de::Error {
+                return match BASE64_STANDARD.decode(s) {
+                    Ok(bytes) => {
+                        return match <[u8; 16]>::try_from(bytes) {
+                            Ok(num) => Ok(ActionGfU128(u128::from_be_bytes(num))),
+                            Err(err) => {
+                                eprintln!("err");
+                                Err(E::custom(format!("Error parsing {:x?} as 16 bytes into u128. Actual lenght: {}", err, err.len())))
+                            }
+                        };
+                    },
                     Err(error) => {
                         eprintln!("Failed to parse bytes, error: {}", error.to_string());
                         Err(E::custom(error.to_string()))

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # dirname outputs relative directory of the build script
 # pwd the current location
 # result: location of my repository
