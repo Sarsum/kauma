@@ -11,19 +11,29 @@ mod padding_oracle;
 mod gf_actions;
 
 #[derive(Debug)]
+/// Type used when parsing the actions into the action enum
+/// Required as the numbers can either be integers or hex-strings
 pub struct ActionNumber(BigInt);
 
 #[derive(Debug)]
+// Type to map the base64-encoded bytes of unkown length 
 pub struct ActionBytes(Vec<u8>);
 
 #[derive(Debug)]
+// Special type for the GF actions including AES-GCM polynoms in BE
 pub struct ActionGfU128(u128);
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all="snake_case")]
+/// Additional type for the two polynom versions due to a ton of required deserialization methods to automatically map the polynom
+/// This is due to the different variable names in the different action types
+/// Enum can be matched inside the action and the desired typed GF element created 
 pub enum ActionPoly { P1, P2 }
 
 #[derive(Deserialize, Debug)]
+// tag=action maps the enum name to the action field of the json
+// content=arguments pulls the enum values from the actions' arguments
+// snake_case to map the Rust naming convention to the name of the actions
 #[serde(tag="action", content="arguments", rename_all="snake_case")]
 pub enum Action {
     Calc {
@@ -67,7 +77,7 @@ pub enum Action {
     }
 }
 
-// I might write a proper deserializer at an later point
+// I might write a proper deserializer at a later point
 // for the moment, this is sufficient to handle unknown action types
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
@@ -97,6 +107,7 @@ impl<'de> Deserialize<'de> for ActionNumber {
     {
         struct V;
 
+        /// contains different "visit_TYPE" methods which will be invoked for the respective type being present when expecting an ActionNumber
         impl<'de> de::Visitor<'de> for V {
             type Value = ActionNumber;
 
@@ -148,6 +159,7 @@ impl<'de> Deserialize<'de> for ActionBytes {
     {
         struct V;
 
+        // only expecting a string for ActionBytes
         impl<'de> de::Visitor<'de> for V {
             type Value = ActionBytes;
 
@@ -182,7 +194,7 @@ impl<'de> Deserialize<'de> for ActionGfU128 {
             type Value = ActionGfU128;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str(r#"String containing base64 encoded data"#)
+                f.write_str(r#"String containing 16 base64 encoded bytes"#)
             }
 
             fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>

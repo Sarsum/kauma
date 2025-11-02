@@ -119,6 +119,7 @@ pub fn run_action(hostname: String, port: BigInt, key_id: BigInt, iv: Vec<u8>, c
                 }
             }
 
+            // byte num in block
             let b = 15 - i;
             let correct_padding = attack_byte(b, &mut client, &mut padded_blocks)?;
             previous_decrypted = correct_padding ^ padding_size_num;

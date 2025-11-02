@@ -19,14 +19,14 @@ pub fn to_number(value: BigInt) -> Value {
     }
 }
 
+
+/// Divmod method supporting 128 bit polynoms in AES-GCM notation!
+/// Due to the changed order, the the reduction is a left-shift
 pub fn divmod(dividend: u128, divisor: u128) -> Result<(u128, u128)> {
-
-    eprintln!("Dividend {:b}", dividend);
-    eprintln!("Divisor {:b}", divisor);
-
     if divisor == 0 {
         return Err(anyhow!("Divmod: division by zero!"))
     }
+    // only calculate the degree of the divisor once
     let degree_divisor = 128 - divisor.trailing_zeros();
     let mut quotient = 0u128;
     let mut remainder = dividend;
@@ -36,8 +36,10 @@ pub fn divmod(dividend: u128, divisor: u128) -> Result<(u128, u128)> {
         if degree_remainer < degree_divisor {
             break;
         }
-
+        
+        // Add divided degree to quotient
         quotient ^= 1u128 << (127 - (degree_remainer - degree_divisor));
+        // Eliminate the hightest exponent
         remainder ^= divisor >> (degree_remainer - degree_divisor);
     }
     Ok((quotient, remainder))

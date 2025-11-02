@@ -8,6 +8,9 @@ pub struct GF2m<M: ReducePoly> {
     _m: core::marker::PhantomData<M>, // need PhantomData for typing
 }
 
+/// Trait used for the different reduction polynoms P1 and P2
+/// This way, the implementation can be shared through typing
+/// Due to the trait being named Modulus before, it is being referenced as "M: ReducePoly"
 pub trait ReducePoly {
     const DEG: u32;
     const MOD: u128;
@@ -40,6 +43,8 @@ impl <M: ReducePoly> GF2m<M> {
     }
 
     pub fn mul(self, rhs: Self) -> Self {
+        // NIST SP 800-38D implementation for AES-GCM multiplication
+        // The variable names are derived from there
         let mut z = 0u128;
         let mut v = rhs.value;
         // M::DEG is 128, therefore we need to substract one when calculating the index
@@ -86,6 +91,7 @@ impl <M: ReducePoly> GF2m<M> {
     }
 }
 
+/// Implementation for var1 * var2 notation for multiplication of GF elements
 impl<M: ReducePoly> Mul for GF2m<M> {
     type Output = Self;
 
@@ -94,6 +100,7 @@ impl<M: ReducePoly> Mul for GF2m<M> {
     }
 }
 
+/// Implementation for var1 + var2 notation for addition of GF elements
 impl<M: ReducePoly> Add for GF2m<M> {
     type Output = Self;
 
@@ -102,6 +109,7 @@ impl<M: ReducePoly> Add for GF2m<M> {
     }
 }
 
+/// Implementation for var1 / var2 notation for divison of GF elements
 impl<M: ReducePoly> Div for GF2m<M> {
     type Output = Self;
 

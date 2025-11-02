@@ -21,13 +21,14 @@ fn main() {
     }
     // first arg is program name, e.g. "kauma"
     let input_path = &args[1];
-    //run_exercise_file(input_path);
 
     if let Some(testcases) = get_exercises_from_file(input_path) {
         run_exercises(testcases, input_path);
     }
 }
 
+
+// returns none if either file cannot be opened or the json content is invalid
 fn get_exercises_from_file(filename: &String) -> Option<TestcaseFile> {
     match File::open(filename) {
         Ok(file) => {
