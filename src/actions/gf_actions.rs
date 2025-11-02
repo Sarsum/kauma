@@ -28,8 +28,6 @@ pub fn run_gf_pow(b: u128, exp: BigInt, poly: ActionPoly) -> Result<Value> {
 }
 
 fn gf_pow<M: ReducePoly>(b: u128, exp: BigInt) -> Result<Value> {
-    eprintln!("Test: {:b}", (GF2m::<M>::new(1u128 << 126) * GF2m::<M>::new(1u128 << 126)).value);
-
     let result = GF2m::<M>::new(b).pow(exp);
     let y = BASE64_STANDARD.encode(result.value.to_be_bytes());
 
