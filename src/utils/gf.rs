@@ -1,4 +1,5 @@
 use core::ops::{Add, Mul, Div};
+use std::{ops::{AddAssign}};
 
 use num::{BigInt, One, Zero};
 
@@ -38,18 +39,26 @@ impl <M: ReducePoly> GF2m<M> {
         Self { value: value, _m: Default::default() }
     }
 
+    pub fn zero() -> Self {
+        Self { value: 0u128, _m: Default::default() }
+    }
+
     pub fn one() -> Self {
         Self { value: 1u128 << (M::DEG - 1), _m: Default::default() }
     }
 
     pub fn mul(self, rhs: Self) -> Self {
+        Self::mul_u128(self.value, rhs.value)
+    }
+
+    fn mul_u128(lhs: u128, rhs: u128) -> Self {
         // NIST SP 800-38D implementation for AES-GCM multiplication
         // The variable names are derived from there
         let mut z = 0u128;
-        let mut v = rhs.value;
+        let mut v = rhs;
         // M::DEG is 128, therefore we need to substract one when calculating the index
         for i in 0..M::DEG {
-            if self.value & (1u128 << (M::DEG - 1 - i)) != 0 {
+            if lhs & (1u128 << (M::DEG - 1 - i)) != 0 {
                 z ^= v
             }
             if v & 1 == 0 {
@@ -59,6 +68,11 @@ impl <M: ReducePoly> GF2m<M> {
             }
         }
         Self { value: z, _m: Default::default() }
+    }
+
+    pub fn mul_borrowed(lhs: &Self, rhs: &Self) -> Self {
+        let result = Self::mul_u128(lhs.value, rhs.value);
+        return Self { value: result.value, _m: Default::default() }
     }
 
     pub fn square(self) -> Self {
@@ -89,6 +103,10 @@ impl <M: ReducePoly> GF2m<M> {
         // sqrt(a) = a^(2^(m-1))
         self.pow(BigInt::one() << (M::DEG - 1))
     }
+
+    pub fn add_assign(&mut self, rhs: Self) {
+        self.value ^= rhs.value;
+    }
 }
 
 /// Implementation for var1 * var2 notation for multiplication of GF elements
@@ -115,5 +133,19 @@ impl<M: ReducePoly> Div for GF2m<M> {
 
     fn div(self, rhs: Self) -> Self::Output {
         self * rhs.inv()
+    }
+}
+
+impl<M: ReducePoly> AddAssign for GF2m<M> {
+    fn add_assign(&mut self, rhs: Self) {
+        self.add_assign(rhs);
+    }
+}
+
+impl<'a, 'b, M: ReducePoly> Mul<&'b GF2m<M>> for &'a GF2m<M> {
+    type Output = GF2m<M>;
+
+    fn mul(self, rhs: &'b GF2m<M>) -> Self::Output {
+        GF2m::<M>::mul_borrowed(self, rhs)
     }
 }
