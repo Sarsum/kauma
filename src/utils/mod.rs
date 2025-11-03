@@ -3,6 +3,7 @@ use num::{BigInt};
 use num::traits::{ToPrimitive, Signed};
 use serde_json::{Number, Value};
 
+pub mod aes;
 pub mod gf;
 
 pub fn to_number(value: BigInt) -> Value {

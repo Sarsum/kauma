@@ -9,6 +9,7 @@ use anyhow::{Result};
 mod calc;
 mod padding_oracle;
 mod gf_actions;
+mod gcm_actions;
 
 #[derive(Debug)]
 /// Type used when parsing the actions into the action enum
@@ -74,6 +75,13 @@ pub enum Action {
     GfDivmod {
         a: ActionGfU128,
         b: ActionGfU128
+    },
+    GcmEncrypt {
+        poly: ActionPoly,
+        nonce: ActionBytes,
+        key: ActionBytes,
+        plaintext: ActionBytes,
+        ad: ActionBytes
     }
 }
 
@@ -97,6 +105,8 @@ pub fn run_action(action: Action) -> Result<Value> {
         Action::GfDiv { a, b, poly } => gf_actions::run_gf_div(a.0, b.0, poly),
         Action::GfSqrt { x, poly } => gf_actions::run_gf_sqrt(x.0, poly),
         Action::GfDivmod { a, b } => gf_actions::run_gf_divmod(a.0, b.0),
+        Action::GcmEncrypt { poly, nonce, key, plaintext, ad }
+            => gcm_actions::run_gcm_encrypt(poly, nonce.0, key.0, plaintext.0, ad.0)
     }
 }
 
