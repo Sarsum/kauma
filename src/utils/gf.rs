@@ -1,7 +1,7 @@
 use core::ops::{Add, Mul, Div};
 use std::{ops::{AddAssign}};
 
-use num::{BigInt, One, Zero};
+use num::{BigInt, One, Zero, bigint::Sign};
 
 #[derive(Debug)]
 pub struct GF2m<M: ReducePoly> {
@@ -80,6 +80,11 @@ impl <M: ReducePoly> GF2m<M> {
     }
 
     pub fn pow(mut self, mut exp: BigInt) -> Self {
+        if exp.is_zero() {
+            return Self::one()
+        } else if exp.sign() == Sign::Minus {
+            return self.pow(-exp).inv();
+        }
         let mut acc = Self::one();
         while &exp != &BigInt::zero() {
             if &exp & BigInt::one() != BigInt::zero() {
