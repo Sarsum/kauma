@@ -100,8 +100,12 @@ impl <M: ReducePoly> GF2m<M> {
 
     pub fn inv(self) -> Self {
         // Itoh–Tsujii a^-1 = a^(2^m - 2)
-        self.pow((BigInt::one() << M::DEG) - 2)
-
+        // self.pow((BigInt::one() << M::DEG) - 2);
+        let mut t = Self::new(self.value);
+        for _ in 0..(M::DEG - 2) {
+            t = &t.square() * &self;
+        }
+        t.square()
     }
 
     pub fn sqrt(self) -> Self {
