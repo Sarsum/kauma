@@ -110,7 +110,12 @@ impl <M: ReducePoly> GF2m<M> {
 
     pub fn sqrt(self) -> Self {
         // sqrt(a) = a^(2^(m-1))
-        self.pow(BigInt::one() << (M::DEG - 1))
+        // self.pow(BigInt::one() << (M::DEG - 1))
+        let mut x = Self::new(self.value);
+        for _ in 0..127 {
+            x = x.square();
+        }
+        x
     }
 
     pub fn add_assign(&mut self, rhs: Self) {
