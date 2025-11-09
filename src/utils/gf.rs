@@ -1,12 +1,20 @@
 use core::ops::{Add, Mul, Div};
-use std::ops::{AddAssign, BitXorAssign, MulAssign};
+use std::{ops::{AddAssign, BitXorAssign, MulAssign}};
 
+use base64::{Engine, prelude::BASE64_STANDARD};
 use num::{BigInt, One, Zero, bigint::Sign};
+use serde::Serialize;
 
 #[derive(Debug)]
 pub struct GF2m<M: ReducePoly> {
     pub value: u128,
     _m: core::marker::PhantomData<M>, // need PhantomData for typing
+}
+
+impl<M: ReducePoly> Clone for GF2m<M> {
+    fn clone(&self) -> Self {
+        Self::new(self.value)
+    }
 }
 
 /// Trait used for the different reduction polynoms P1 and P2
@@ -218,6 +226,14 @@ impl<M: ReducePoly> Add for GF2m<M> {
     }
 }
 
+impl<'lhs, 'rhs, M: ReducePoly> Add<&'rhs GF2m<M>> for &'lhs GF2m<M> {
+    type Output = GF2m<M>;
+
+    fn add(self, rhs: &GF2m<M>) -> Self::Output {
+        GF2m::<M>::new(self.value ^ rhs.value)
+    }
+}
+
 /// Implementation for var1 / var2 notation for divison of GF elements
 impl<M: ReducePoly> Div for GF2m<M> {
     type Output = Self;
@@ -258,5 +274,14 @@ impl<M:ReducePoly> MulAssign<GF2m<M>> for GF2m<M> {
 impl<'lhs, 'rhs, M: ReducePoly> MulAssign<&'rhs GF2m<M>> for GF2m<M> {
     fn mul_assign(&mut self, rhs: &'rhs GF2m<M>) {
         self.inner_mul_assign(rhs);
+    }
+}
+
+impl<M: ReducePoly> Serialize for GF2m<M> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer {
+        let b64 = BASE64_STANDARD.encode(self.value.to_be_bytes());
+        serializer.serialize_str(&b64)
     }
 }

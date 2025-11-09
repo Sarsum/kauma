@@ -2,14 +2,17 @@ use std::fmt;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 use num::{BigInt};
-use serde::{Deserialize, Deserializer, de};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 use anyhow::{Result};
+
+use crate::actions::gfpoly_actions::run_gfpoly_monic;
 
 mod calc;
 mod padding_oracle;
 mod gf_actions;
 mod gcm_actions;
+mod gfpoly_actions;
 
 #[derive(Debug)]
 /// Type used when parsing the actions into the action enum
@@ -20,9 +23,9 @@ pub struct ActionNumber(BigInt);
 // Type to map the base64-encoded bytes of unkown length 
 pub struct ActionBytes(Vec<u8>);
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 // Special type for the GF actions including AES-GCM polynoms in BE
-pub struct ActionGfU128(u128);
+pub struct ActionGfU128(pub u128);
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all="snake_case")]
@@ -30,6 +33,9 @@ pub struct ActionGfU128(u128);
 /// This is due to the different variable names in the different action types
 /// Enum can be matched inside the action and the desired typed GF element created 
 pub enum ActionPoly { P1, P2 }
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ActionGfPoly(pub Vec<ActionGfU128>);
 
 #[derive(Deserialize, Debug)]
 // tag=action maps the enum name to the action field of the json
@@ -82,6 +88,28 @@ pub enum Action {
         key: ActionBytes,
         plaintext: ActionBytes,
         ad: ActionBytes
+    },
+    GfpolySort {
+        polys: Vec<ActionGfPoly>
+    },
+    GfpolyMonic {
+        #[serde(rename="A")]
+        a: ActionGfPoly,
+        poly: ActionPoly
+    },
+    GfpolyAdd {
+        #[serde(rename="A")]
+        a: ActionGfPoly,
+        #[serde(rename="B")]
+        b: ActionGfPoly,
+        poly: ActionPoly
+    },
+    GfpolyMul {
+        #[serde(rename="A")]
+        a: ActionGfPoly,
+        #[serde(rename="B")]
+        b: ActionGfPoly,
+        poly: ActionPoly
     }
 }
 
@@ -106,7 +134,11 @@ pub fn run_action(action: Action) -> Result<Value> {
         Action::GfSqrt { x, poly } => gf_actions::run_gf_sqrt(x.0, poly),
         Action::GfDivmod { a, b } => gf_actions::run_gf_divmod(a.0, b.0),
         Action::GcmEncrypt { poly, nonce, key, plaintext, ad }
-            => gcm_actions::run_gcm_encrypt(poly, nonce.0, key.0, plaintext.0, ad.0)
+            => gcm_actions::run_gcm_encrypt(poly, nonce.0, key.0, plaintext.0, ad.0),
+        Action::GfpolySort { polys } => gfpoly_actions::run_gfpoly_sort(polys),
+        Action::GfpolyAdd { a, b, poly } => gfpoly_actions::run_gfpoly_add(a, b, poly),
+        Action::GfpolyMul { a, b, poly } => gfpoly_actions::run_gfpoly_mul(a, b, poly),
+        Action::GfpolyMonic { a, poly } => run_gfpoly_monic(a, poly)
     }
 }
 
@@ -228,5 +260,14 @@ impl<'de> Deserialize<'de> for ActionGfU128 {
         }
 
         deserializer.deserialize_any(V)
+    }
+}
+
+impl Serialize for ActionGfU128 {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer {
+        let b64 = BASE64_STANDARD.encode(self.0.to_be_bytes());
+        serializer.serialize_str(&b64)
     }
 }
