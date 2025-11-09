@@ -8,7 +8,7 @@ use serde::Serialize;
 #[derive(Debug)]
 pub struct GF2m<M: ReducePoly> {
     pub value: u128,
-    _m: core::marker::PhantomData<M>, // need PhantomData for typing
+    _m: core::marker::PhantomData<M>, // need PhantomData for typing as M is not used in the struct otherwise
 }
 
 impl<M: ReducePoly> Clone for GF2m<M> {
