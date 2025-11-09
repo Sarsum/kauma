@@ -48,37 +48,18 @@ impl <M: ReducePoly> GF2m<M> {
     }
 
     pub fn mul(self, rhs: Self) -> Self {
-        let result = Self::mul_u128(self.value, rhs.value);
+        let result = mul_u128(self.value, rhs.value, M::MOD, M::DEG);
         Self { value: result, _m: Default::default() }
     }
 
     /// mul_assign with pointer-rhs, can be used for both (rhs being pointer and GF2m directly)
-    pub fn mul_assign(&mut self, rhs: &Self) {
-        let result = Self::mul_u128(self.value, rhs.value);
+    pub fn inner_mul_assign(&mut self, rhs: &Self) {
+        let result = mul_u128(self.value, rhs.value, M::MOD, M::DEG);
         self.value = result;
     }
 
-    fn mul_u128(lhs: u128, rhs: u128) -> u128 {
-        // NIST SP 800-38D implementation for AES-GCM multiplication
-        // The variable names are derived from there
-        let mut z = 0u128;
-        let mut v = rhs;
-        // M::DEG is 128, therefore we need to substract one when calculating the index
-        for i in 0..M::DEG {
-            if lhs & (1u128 << (M::DEG - 1 - i)) != 0 {
-                z ^= v
-            }
-            if v & 1 == 0 {
-                v >>= 1;
-            } else {
-                v = (v >> 1) ^ M::MOD
-            }
-        }
-        z
-    }
-
     pub fn mul_borrowed(lhs: &Self, rhs: &Self) -> Self {
-        let result = Self::mul_u128(lhs.value, rhs.value);
+        let result = mul_u128(lhs.value, rhs.value, M::MOD, M::DEG);
         return Self { value: result, _m: Default::default() }
     }
 
@@ -200,6 +181,25 @@ impl <M: ReducePoly> GF2m<M> {
     }
 }
 
+fn mul_u128(lhs: u128, rhs: u128, poly: u128, degree: u32) -> u128 {
+    // NIST SP 800-38D implementation for AES-GCM multiplication
+    // The variable names are derived from there
+    let mut z = 0u128;
+    let mut v = rhs;
+    // M::DEG is 128, therefore we need to substract one when calculating the index
+    for i in 0..degree {
+        if lhs & (1u128 << (degree - 1 - i)) != 0 {
+            z ^= v
+        }
+        if v & 1 == 0 {
+            v >>= 1;
+        } else {
+            v = (v >> 1) ^ poly
+        }
+    }
+    z
+}
+
 /// Implementation for var1 * var2 notation for multiplication of GF elements
 impl<M: ReducePoly> Mul for GF2m<M> {
     type Output = Self;
@@ -250,13 +250,13 @@ impl<M: ReducePoly> BitXorAssign<u128> for GF2m<M> {
 
 impl<M:ReducePoly> MulAssign<GF2m<M>> for GF2m<M> {
     fn mul_assign(&mut self, rhs: GF2m<M>) {
-        self.mul_assign(&rhs);
+        self.inner_mul_assign(&rhs);
     }
 }
 
 /// MullAssign for rhs-pointer (used in loops, when we need rhs multiple times)
 impl<'lhs, 'rhs, M: ReducePoly> MulAssign<&'rhs GF2m<M>> for GF2m<M> {
     fn mul_assign(&mut self, rhs: &'rhs GF2m<M>) {
-        self.mul_assign(rhs);
+        self.inner_mul_assign(rhs);
     }
 }

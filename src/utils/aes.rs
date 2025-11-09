@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Ok, Result, anyhow};
 use openssl::{symm::{Cipher, Crypter, Mode}};
 
 use crate::utils::gf::{GF2m, ReducePoly};
@@ -25,95 +25,111 @@ pub fn gcm_encrypt<M: ReducePoly>(nonce: &[u8; 12], key: &[u8; 16], plaintext: V
 
     let auth_key_gf = GF2m::<M>::new(u128::from_be_bytes(auth_key));
 
-    // initialize Y
-    let mut y = [0u8; 16];
-    y[..12].copy_from_slice(nonce);
-    let mut ctr: u32 = 1;
-    y[12..].copy_from_slice(&ctr.to_be_bytes());
+    // Create keystream including H, passing slice with H to subfunctions
+    let plain_len = plaintext.len();
+    // division is floored, therefore we get the correct (floored) result if last block contains less than 16 bytes
+    let keystream_blocks = (plain_len + 15) / 16;
+    // start counter at 2; one block more because we want H
+    let keystream = generate_keystream(&mut encrypter, nonce, 1, keystream_blocks + 1)?;
 
-    // Get auth tag XOR
-    let auth_tag_xor_result = encrypter.update(&y, &mut encrypter_buffer)
-        .map_err(|err| anyhow!(err.to_string()))?;
-    if auth_tag_xor_result != 16 {
-        return Err(anyhow!("Auth Tag XOR generation did not encrypt 16 bytes"))
-    }
-    let auth_tag_xor: [u8; 16] = get_16_bytes(&encrypter_buffer)?;
-    let auth_tag_xor = u128::from_be_bytes(auth_tag_xor);
+    let auth_tag_xor = u128::from_be_bytes(get_16_bytes(&keystream[0..16])?);
 
     let mut auth_tag = GF2m::<M>::zero();
 
     // Consume additional data before encryption
-    let ad_len = ad.len();
-    let ad_full_blocks = ad_len / 16;
-    let ad_block_offset = ad_len % 16;
-    for i in 0..ad_full_blocks {
-        let block = get_16_bytes(&ad[i*16..(i*16+16)])?;
-        auth_tag ^= u128::from_be_bytes(block);
-        auth_tag *= &auth_key_gf;
+    ghash_bytes(&mut auth_tag, &auth_key_gf, &ad)?;
+    
+    // ciphertext should be exaclty as long as plaintext
+    let mut ciphertext: Vec<u8> = Vec::with_capacity(plain_len);
+    encrypt_and_ghash(&mut ciphertext, &mut auth_tag, &auth_key_gf, &plaintext, &keystream[16..])?;
+
+    // len(A)*8 || len(ciphertext)*8 for bit lengths
+    let l = (ad.len() as u128 * 8) << 64 | (plain_len as u128 * 8);
+    ghash_apply_block(&mut auth_tag, l, &auth_key_gf);
+
+    return Ok(AesGcmResult { ciphertext: ciphertext, tag: (auth_tag.value ^ auth_tag_xor).to_be_bytes(), l: l.to_be_bytes(), h: auth_key});
+}
+
+fn ghash_apply_block<M: ReducePoly>(auth_tag: &mut GF2m<M>, xor_val: u128, auth_key: &GF2m<M>) {
+    *auth_tag ^= xor_val;
+    *auth_tag *= auth_key;
+}
+
+/// generic GHASH function, used only for AD due to my implementation of applying GHASH while encrypting
+fn ghash_bytes<M: ReducePoly>(auth_tag: &mut GF2m<M>, h: &GF2m<M>, data: &[u8]) -> Result<()> {
+    // process complete 16 byte chunks, nothing to keep in mind
+    for chunk in data.chunks_exact(16) {
+        let block: [u8; 16] = get_16_bytes(chunk)?;
+        ghash_apply_block(auth_tag, u128::from_be_bytes(block), h);
     }
-    if ad_block_offset > 0 {
+    let remainder = data.chunks_exact(16).remainder();
+    // process final incomplete chunk
+    // the block needs to have zeroes after AD values
+    if !remainder.is_empty() {
         let mut tmp = [0u8; 16];
-        for i in 0..ad_block_offset {
-            tmp[i] = ad[ad_full_blocks*16+i];
-        }
-        auth_tag ^= u128::from_be_bytes(tmp);
-        auth_tag *= &auth_key_gf;
+        tmp[..remainder.len()].copy_from_slice(remainder);
+        ghash_apply_block(auth_tag, u128::from_be_bytes(tmp), h);
+    }
+    Ok(())
+}
+
+fn generate_keystream(crypter: &mut Crypter, nonce: &[u8; 12], counter_start: u32, block_count: usize) -> Result<Vec<u8>> {
+    let mut input_block = [0u8; 16];
+    // nonce is always the same
+    input_block[..12].copy_from_slice(nonce);
+
+    let mut buffer = vec![0u8; block_count * 16];
+    let mut ctr = counter_start;
+    for i in 0..block_count {
+        // nonce always at beginning of block
+        buffer[i*16 .. i*16 + 12].copy_from_slice(nonce);
+        buffer[i*16+12 .. i*16 + 16].copy_from_slice(&ctr.to_be_bytes());
+        ctr += 1;
+    }
+    let keystream_len = buffer.len();
+
+    // output buffer needs to be 16 bytes longer
+    let mut keystream = vec![0u8; keystream_len + 16];
+    let n = crypter.update(&buffer, &mut keystream)
+        .map_err(|err| anyhow!("AES keystream generation failed: {}", err.to_string()))?;
+
+    if n != keystream_len {
+        return Err(anyhow!("AES keystream not expected lenght! Got {} but expected {}", n, keystream_len))
     }
 
-    let plain_len = plaintext.len();
-    let plain_full_blocks = plain_len / 16;
-    let plain_block_offset = plain_len % 16;
-    let mut ciphertext: Vec<u8> = Vec::new();
-    for i in 0..plain_full_blocks {
-        // Initialized at 1, need to increase before each ciphertext block
-        ctr += 1;
-        // set counter bytes
-        y[12..].copy_from_slice(&ctr.to_be_bytes());
-        let block_encrypt_result = encrypter.update(&y, &mut encrypter_buffer)
-            .map_err(|err| anyhow!(err.to_string()))?;
-        if block_encrypt_result != 16 {
-            return Err(anyhow!(format!("Ciphertext block {} did not encrypt 16 bytes", i)))
-        }
-        let block: [u8; 16] = get_16_bytes(&encrypter_buffer)?;
+    Ok(keystream)
+}
+
+fn encrypt_and_ghash<M: ReducePoly>(ciphertext: &mut Vec<u8>, auth_tag: &mut GF2m<M>, h: &GF2m<M>, plaintext: &[u8], keystream: &[u8]) -> Result<()> {
+    // cannot use chunking as we need index and offset to access keystream
+    let full_blocks = plaintext.len() / 16;
+    let offset = plaintext.len() % 16;
+
+    for i in 0..full_blocks {
+        let block: [u8; 16] = get_16_bytes(&keystream[i*16 .. i*16 + 16])?;
         let block = u128::from_be_bytes(block);
         let plain_block = u128::from_be_bytes(get_16_bytes(&plaintext[(i*16)..(i+1)*16])?);
         let cipher_block = block ^ plain_block;
         ciphertext.extend_from_slice(&cipher_block.to_be_bytes());
 
         // extend auth tag
-        auth_tag ^= cipher_block;
-        auth_tag *= &auth_key_gf;
+        ghash_apply_block(auth_tag, cipher_block, h);
     }
 
-    if plain_block_offset > 0 {
-        ctr += 1;
-        y[12..].copy_from_slice(&ctr.to_be_bytes());
-        let block_encrypt_result = encrypter.update(&y, &mut encrypter_buffer)
-            .map_err(|err| anyhow!(err.to_string()))?;
-        if block_encrypt_result != 16 {
-            return Err(anyhow!(format!("Offset Ciphertext block did not encrypt 16 bytes")))
-        }
-        let block: [u8; 16] = get_16_bytes(&encrypter_buffer)?;
+    if offset > 0 {
+        let block: [u8; 16] = get_16_bytes(&keystream[full_blocks*16 .. full_blocks*16 + 16])?;
         let mut tmp = [0u8; 16];
 
         // only want to XOR with set bytes and keep 0-bytes for GHASH, therefore for loop
-        for i in 0..plain_block_offset {
-            tmp[i] = plaintext[plain_full_blocks*16+i] ^ block[i]
+        for i in 0..offset {
+            tmp[i] = plaintext[full_blocks*16+i] ^ block[i]
         }
         // only ciphertext bytes
-        ciphertext.extend_from_slice(&tmp[..plain_block_offset]);
+        ciphertext.extend_from_slice(&tmp[..offset]);
 
-        auth_tag ^= u128::from_be_bytes(tmp);
-        auth_tag *= &auth_key_gf;
+        ghash_apply_block(auth_tag, u128::from_be_bytes(tmp), h);
     }
-
-    // len(A)*8 || len(ciphertext)*8 for bit lengths
-    let l = (ad_len as u128 * 8) << 64 | (plain_len as u128 * 8);
-    auth_tag ^= l;
-    auth_tag *= &auth_key_gf;
-
-
-    return Ok(AesGcmResult { ciphertext: ciphertext, tag: (auth_tag.value ^ auth_tag_xor).to_be_bytes(), l: l.to_be_bytes(), h: auth_key});
+    Ok(())
 }
 
 fn get_16_bytes(arr: &[u8]) -> Result<[u8; 16]> {
