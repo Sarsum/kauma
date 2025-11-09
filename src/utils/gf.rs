@@ -1,5 +1,5 @@
 use core::ops::{Add, Mul, Div};
-use std::{ops::AddAssign};
+use std::ops::{AddAssign, BitXorAssign, MulAssign};
 
 use num::{BigInt, One, Zero, bigint::Sign};
 
@@ -48,10 +48,17 @@ impl <M: ReducePoly> GF2m<M> {
     }
 
     pub fn mul(self, rhs: Self) -> Self {
-        Self::mul_u128(self.value, rhs.value)
+        let result = Self::mul_u128(self.value, rhs.value);
+        Self { value: result, _m: Default::default() }
     }
 
-    fn mul_u128(lhs: u128, rhs: u128) -> Self {
+    /// mul_assign with pointer-rhs, can be used for both (rhs being pointer and GF2m directly)
+    pub fn mul_assign(&mut self, rhs: &Self) {
+        let result = Self::mul_u128(self.value, rhs.value);
+        self.value = result;
+    }
+
+    fn mul_u128(lhs: u128, rhs: u128) -> u128 {
         // NIST SP 800-38D implementation for AES-GCM multiplication
         // The variable names are derived from there
         let mut z = 0u128;
@@ -67,12 +74,12 @@ impl <M: ReducePoly> GF2m<M> {
                 v = (v >> 1) ^ M::MOD
             }
         }
-        Self { value: z, _m: Default::default() }
+        z
     }
 
     pub fn mul_borrowed(lhs: &Self, rhs: &Self) -> Self {
         let result = Self::mul_u128(lhs.value, rhs.value);
-        return Self { value: result.value, _m: Default::default() }
+        return Self { value: result, _m: Default::default() }
     }
 
     fn spread32(x: u32) -> u64 {
@@ -158,7 +165,7 @@ impl <M: ReducePoly> GF2m<M> {
         let mut acc = Self::one();
         while exp != BigInt::zero() {
             if &exp & BigInt::one() != BigInt::zero() {
-                acc = acc.mul(Self::new(self.value))
+                acc *= Self::new(self.value)
             }
             exp >>= 1;
             if exp != BigInt::zero() {
@@ -226,10 +233,30 @@ impl<M: ReducePoly> AddAssign for GF2m<M> {
     }
 }
 
-impl<'a, 'b, M: ReducePoly> Mul<&'b GF2m<M>> for &'a GF2m<M> {
+impl<'lhs, 'rhs, M: ReducePoly> Mul<&'rhs GF2m<M>> for &'lhs GF2m<M> {
     type Output = GF2m<M>;
 
-    fn mul(self, rhs: &'b GF2m<M>) -> Self::Output {
+    fn mul(self, rhs: &'rhs GF2m<M>) -> Self::Output {
         GF2m::<M>::mul_borrowed(self, rhs)
+    }
+}
+
+/// BitXorAssign for u128, AddAssign is only for same types
+impl<M: ReducePoly> BitXorAssign<u128> for GF2m<M> {
+    fn bitxor_assign(&mut self, rhs: u128) {
+        self.value ^= rhs
+    }
+}
+
+impl<M:ReducePoly> MulAssign<GF2m<M>> for GF2m<M> {
+    fn mul_assign(&mut self, rhs: GF2m<M>) {
+        self.mul_assign(&rhs);
+    }
+}
+
+/// MullAssign for rhs-pointer (used in loops, when we need rhs multiple times)
+impl<'lhs, 'rhs, M: ReducePoly> MulAssign<&'rhs GF2m<M>> for GF2m<M> {
+    fn mul_assign(&mut self, rhs: &'rhs GF2m<M>) {
+        self.mul_assign(rhs);
     }
 }

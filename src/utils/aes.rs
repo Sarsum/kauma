@@ -48,16 +48,16 @@ pub fn gcm_encrypt<M: ReducePoly>(nonce: &[u8; 12], key: &[u8; 16], plaintext: V
     let ad_block_offset = ad_len % 16;
     for i in 0..ad_full_blocks {
         let block = get_16_bytes(&ad[i*16..(i*16+16)])?;
-        auth_tag = GF2m::<M>::new(auth_tag.value ^ u128::from_be_bytes(block));
-        auth_tag = &auth_tag * &auth_key_gf;
+        auth_tag ^= u128::from_be_bytes(block);
+        auth_tag *= &auth_key_gf;
     }
     if ad_block_offset > 0 {
         let mut tmp = [0u8; 16];
         for i in 0..ad_block_offset {
             tmp[i] = ad[ad_full_blocks*16+i];
         }
-        auth_tag = GF2m::<M>::new(auth_tag.value ^ u128::from_be_bytes(tmp));
-        auth_tag = &auth_tag * &auth_key_gf;
+        auth_tag ^= u128::from_be_bytes(tmp);
+        auth_tag *= &auth_key_gf;
     }
 
     let plain_len = plaintext.len();
@@ -81,7 +81,8 @@ pub fn gcm_encrypt<M: ReducePoly>(nonce: &[u8; 12], key: &[u8; 16], plaintext: V
         ciphertext.extend_from_slice(&cipher_block.to_be_bytes());
 
         // extend auth tag
-        auth_tag = &GF2m::<M>::new(cipher_block ^ auth_tag.value) * &auth_key_gf;
+        auth_tag ^= cipher_block;
+        auth_tag *= &auth_key_gf;
     }
 
     if plain_block_offset > 0 {
@@ -102,13 +103,14 @@ pub fn gcm_encrypt<M: ReducePoly>(nonce: &[u8; 12], key: &[u8; 16], plaintext: V
         // only ciphertext bytes
         ciphertext.extend_from_slice(&tmp[..plain_block_offset]);
 
-        auth_tag = GF2m::<M>::new(auth_tag.value ^ u128::from_be_bytes(tmp));
-        auth_tag = &auth_tag * &auth_key_gf;
+        auth_tag ^= u128::from_be_bytes(tmp);
+        auth_tag *= &auth_key_gf;
     }
 
     // len(A)*8 || len(ciphertext)*8 for bit lengths
     let l = (ad_len as u128 * 8) << 64 | (plain_len as u128 * 8);
-    auth_tag = &GF2m::<M>::new(l ^ auth_tag.value) * &auth_key_gf;
+    auth_tag ^= l;
+    auth_tag *= &auth_key_gf;
 
 
     return Ok(AesGcmResult { ciphertext: ciphertext, tag: (auth_tag.value ^ auth_tag_xor).to_be_bytes(), l: l.to_be_bytes(), h: auth_key});
