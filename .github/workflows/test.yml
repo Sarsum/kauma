@@ -5,6 +5,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container: ghcr.io/johndoe31415/labwork-docker:master
+    env:
+      PADDING_ORACLE_SERVER_RS_URL: https://github.com/melo-afk/padding-oracle-server-rs/releases/download/0.2.6/padding-oracle-server-x86_64-unknown-linux-gnu.tar.xz
+      PADDING_ORACLE_SERVER_RS_SHA256: "21455af6b6fdc723f2affc9c8748e2231e4af759f45701b794f184cc8419f881"
     steps:
       - name: Setup rust # Somehow Github does not find the provided Rust version in the container image 
         run: rustup default stable
@@ -13,5 +16,30 @@ jobs:
           submodules: true # pull https://github.com/Sarsum/TINF23CS-kauma-tests/ into testing/
       - name: Build kauma binary
         run: "$GITHUB_WORKSPACE/build"
+      - name: Download padding-oracle-server-rs
+        run: |
+          curl -L "$PADDING_ORACLE_SERVER_RS_URL" -o padding-oracle-server.tar.xz
+
+      - name: Verify SHA256
+        run: |
+          SHA256=$(sha256sum padding-oracle-server.tar.xz | awk '{print $1}')
+          if [ "$SHA256" != "$PADDING_ORACLE_SERVER_RS_SHA256" ]; then
+            echo "SHA256 mismatch!"
+            echo " expected: $PADDING_ORACLE_SERVER_RS_SHA256"
+            echo "   actual: $SHA256"
+            exit 1
+          fi
+          echo "SHA256 OK"
+      - name: Extract padding-oracle-server-rs
+        run: |
+          set -eux
+          mkdir -p padding-oracle
+          tar -xJf padding-oracle-server.tar.xz -C padding-oracle
+          mv padding-oracle/padding-oracle-server-x86_64-unknown-linux-gnu/padding-oracle-server padding-oracle/padding-oracle-server
+          chmod +x padding-oracle/padding-oracle-server
+      - name: Run padding-oracle-server-rs in background
+        run: |
+          cp $GITHUB_WORKSPACE/testing/sidecars/padding-oracle-server/keys.json padding-oracle/keys.json
+          padding-oracle/padding-oracle-server -s -k padding-oracle/keys.json > /dev/null &
       - name: Run tests from testcase repository
-        run: python3 $GITHUB_WORKSPACE/testing/RunTests.py $GITHUB_WORKSPACE/kauma
+        run: python3 $GITHUB_WORKSPACE/testing/RunTests.py $GITHUB_WORKSPACE/kauma -s padding-oracle-server-rs
