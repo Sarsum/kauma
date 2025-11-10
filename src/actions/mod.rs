@@ -6,8 +6,6 @@ use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 use anyhow::{Result};
 
-use crate::actions::gfpoly_actions::run_gfpoly_monic;
-
 mod calc;
 mod padding_oracle;
 mod gf_actions;
@@ -110,6 +108,44 @@ pub enum Action {
         #[serde(rename="B")]
         b: ActionGfPoly,
         poly: ActionPoly
+    },
+    GfpolyDivmod {
+        #[serde(rename="A")]
+        a: ActionGfPoly,
+        #[serde(rename="B")]
+        b: ActionGfPoly,
+        poly: ActionPoly
+    },
+    GfpolyGcd {
+        #[serde(rename="A")]
+        a: ActionGfPoly,
+        #[serde(rename="B")]
+        b: ActionGfPoly,
+        poly: ActionPoly
+    },
+    GfpolyPow {
+        #[serde(rename="B")]
+        b: ActionGfPoly,
+        e: u8,
+        poly: ActionPoly
+    },
+    GfpolyPowmod {
+        #[serde(rename="B")]
+        b: ActionGfPoly,
+        e: ActionNumber,
+        #[serde(rename="M")]
+        m: ActionGfPoly,
+        poly: ActionPoly
+    },
+    GfpolyDiff {
+        #[serde(rename="F")]
+        f: ActionGfPoly,
+        poly: ActionPoly
+    },
+    GfpolySqrt {
+        #[serde(rename="S")]
+        s: ActionGfPoly,
+        poly: ActionPoly
     }
 }
 
@@ -138,7 +174,13 @@ pub fn run_action(action: Action) -> Result<Value> {
         Action::GfpolySort { polys } => gfpoly_actions::run_gfpoly_sort(polys),
         Action::GfpolyAdd { a, b, poly } => gfpoly_actions::run_gfpoly_add(a, b, poly),
         Action::GfpolyMul { a, b, poly } => gfpoly_actions::run_gfpoly_mul(a, b, poly),
-        Action::GfpolyMonic { a, poly } => run_gfpoly_monic(a, poly)
+        Action::GfpolyMonic { a, poly } => gfpoly_actions::run_gfpoly_monic(a, poly),
+        Action::GfpolyDivmod { a, b, poly } => gfpoly_actions::run_gfpoly_divmod(a, b, poly),
+        Action::GfpolyGcd { a, b, poly } => gfpoly_actions::run_gfpoly_gcd(a, b, poly),
+        Action::GfpolyPow { b, e, poly } => gfpoly_actions::run_gfpoly_pow(b, e, poly),
+        Action::GfpolyPowmod { b, e, m, poly } => gfpoly_actions::run_gfpoly_powmod(b, e.0, m, poly),
+        Action::GfpolyDiff { f, poly } => gfpoly_actions::run_gfpoly_diff(f, poly),
+        Action::GfpolySqrt { s, poly } => gfpoly_actions::run_gfpoly_sqrt(s, poly)
     }
 }
 

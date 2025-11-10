@@ -1,5 +1,5 @@
 use core::ops::{Add, Mul, Div};
-use std::{ops::{AddAssign, BitXorAssign, MulAssign}};
+use std::{cmp::Ordering, ops::{AddAssign, BitXorAssign, MulAssign}};
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 use num::{BigInt, One, Zero, bigint::Sign};
@@ -8,7 +8,7 @@ use serde::Serialize;
 #[derive(Debug)]
 pub struct GF2m<M: ReducePoly> {
     pub value: u128,
-    _m: core::marker::PhantomData<M>, // need PhantomData for typing as M is not used in the struct otherwise
+    _m: core::marker::PhantomData<M>, // need PhantomData for typing as M is not used in the struct otherwise but required for the GF reduction
 }
 
 impl<M: ReducePoly> Clone for GF2m<M> {
@@ -25,7 +25,7 @@ pub trait ReducePoly {
     const MOD: u128;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum P1 {}
 impl ReducePoly for P1 {
     const DEG: u32 = 128;
@@ -49,6 +49,10 @@ impl <M: ReducePoly> GF2m<M> {
 
     pub fn zero() -> Self {
         Self { value: 0u128, _m: Default::default() }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.value == 0
     }
 
     pub fn one() -> Self {
@@ -128,7 +132,7 @@ impl <M: ReducePoly> GF2m<M> {
         hi
     }
 
-    pub fn square_fast(self) -> Self {
+    pub fn square_fast(&self) -> Self {
         // square by putting a zero after each bit going from MSB to LSB
         let (hi, lo) = Self::interlace_zeros_msb_u128(self.value);
 
@@ -138,7 +142,7 @@ impl <M: ReducePoly> GF2m<M> {
     }
 
 
-    pub fn square(self) -> Self {
+    pub fn square(&self) -> Self {
         //Self::new(self.value) * self
         // performance is SLIGHTLY better, talking again about 0.05 - 0.07 seconds at best for 10.000 cases
         // was hell of a rabbit hole to get the reduce working, keeping it as an easter egg
@@ -174,7 +178,7 @@ impl <M: ReducePoly> GF2m<M> {
         t.square()
     }
 
-    pub fn sqrt(self) -> Self {
+    pub fn sqrt(&self) -> Self {
         // sqrt(a) = a^(2^(m-1))
         // self.pow(BigInt::one() << (M::DEG - 1))
         let mut x = Self::new(self.value);
@@ -283,5 +287,28 @@ impl<M: ReducePoly> Serialize for GF2m<M> {
             S: serde::Serializer {
         let b64 = BASE64_STANDARD.encode(self.value.to_be_bytes());
         serializer.serialize_str(&b64)
+    }
+}
+
+// equality just by value
+impl<M: ReducePoly> PartialEq for GF2m<M> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<M: ReducePoly> Eq for GF2m<M> {}
+
+impl<M: ReducePoly> Ord for GF2m<M> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // GCM convention smaller numbers bigger value
+        other.value.cmp(&self.value)
+    }
+}
+
+
+impl<M: ReducePoly> PartialOrd for GF2m<M> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
