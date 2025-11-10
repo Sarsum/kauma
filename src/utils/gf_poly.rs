@@ -81,7 +81,11 @@ impl<M: ReducePoly> GF2mPoly<M> {
     fn mul_borrowed(&self, rhs: &Self) -> Self {
         let size_self = self.elems.len();
         let size_rhs = rhs.elems.len();
-        let mut product: Vec<GF2m<M>> = Vec::with_capacity(size_rhs + size_rhs - 1);
+        if size_self == 0 && size_rhs == 0 {
+            return Self::zero();
+        }
+        let size_res = max(size_self + size_rhs - 1, 1);
+        let mut product: Vec<GF2m<M>> = Vec::with_capacity(size_res);
 
         // multiply each a with each b --> for in for loop
         for l_i in 0..size_self {
@@ -136,7 +140,7 @@ impl<M: ReducePoly> GF2mPoly<M> {
 
     fn square(&self) -> Self {
         if self.degree() == 0 {
-            return Self { elems: vec![self.elems[0].square()] }
+            return Self::zero()
         }
         // squaring is 2n - 1
         let size = self.elems.len() * 2 - 1;
@@ -277,7 +281,6 @@ pub fn gcd<M: ReducePoly>(mut a: GF2mPoly<M>, mut b: GF2mPoly<M>) -> GF2mPoly<M>
 pub fn powmod<M: ReducePoly>(base: GF2mPoly<M>, mut exp: BigInt, modulus: GF2mPoly<M>) -> GF2mPoly<M> {
     // reduce base in case its bigger than modulus
     let (_, mut base_reduced) = divmod(base, &modulus);
-    eprintln!("exp {}", exp);
 
     let mut result = GF2mPoly::<M>::one();
 
