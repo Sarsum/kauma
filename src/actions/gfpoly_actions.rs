@@ -2,12 +2,16 @@ use anyhow::{Ok, Result};
 use num::BigInt;
 use serde_json::{Value, json};
 
-use crate::{actions::{ActionGfPoly, ActionPoly}, utils::{self, gf::{P1, P2, ReducePoly}, gf_poly::{self, GF2mPoly}}};
+use crate::{actions::{ActionGfPoly, ActionPoly}, utils::{gf::{P1, P2, ReducePoly}, gf_poly::{self, GF2mPoly}}};
 
 pub fn run_gfpoly_sort(polys: Vec<ActionGfPoly>) -> Result<Value> {
-    let result = utils::gfpoly_sort(polys)?;
-    // implemented ActionGfU128 Serialize
-    Ok(json!({"sorted": result}))
+    // parsing polynoms into typed (does not matter if P1 or P2) to use the sort implementation instead of writing a second
+    let mut parsed: Vec<GF2mPoly<P1>> = Vec::with_capacity(polys.len());
+    for poly in polys {
+        parsed.push(GF2mPoly::<P1>::from_action_poly(poly));
+    }
+    parsed.sort();
+    Ok(json!({"sorted": parsed}))
 }
 
 pub fn run_gfpoly_monic(a: ActionGfPoly, poly: ActionPoly) -> Result<Value> {

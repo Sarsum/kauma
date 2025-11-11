@@ -3,8 +3,6 @@ use num::{BigInt};
 use num::traits::{ToPrimitive, Signed};
 use serde_json::{Number, Value};
 
-use crate::actions::ActionGfPoly;
-
 pub mod aes;
 pub mod gf;
 pub mod gf_poly;
@@ -47,14 +45,4 @@ pub fn divmod(dividend: u128, divisor: u128) -> Result<(u128, u128)> {
         remainder ^= divisor >> (degree_remainer - degree_divisor);
     }
     Ok((quotient, remainder))
-}
-
-pub fn gfpoly_sort(mut polys: Vec<ActionGfPoly>) -> Result<Vec<ActionGfPoly>> {
-    polys.sort_by(|a, b| {
-        // first, compare Poly degree only
-        a.0.len().cmp(&b.0.len())
-        // then, compare b to a since GCM-convention polynoms are in BE and therefore higher GF elements smaller integers
-        .then_with(|| b.0.cmp(&a.0))
-    });
-    Ok(polys)
 }

@@ -77,6 +77,7 @@ impl <M: ReducePoly> GF2m<M> {
 
     fn spread32(x: u32) -> u64 {
         // feature saves about 0.070 seconds on 10.000 testcases
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("bmi2") {
             unsafe {
                 // Keep bits masked with 1: 101010101010......1010
@@ -302,7 +303,7 @@ impl<M: ReducePoly> Eq for GF2m<M> {}
 impl<M: ReducePoly> Ord for GF2m<M> {
     fn cmp(&self, other: &Self) -> Ordering {
         // GCM convention smaller numbers bigger value
-        other.value.cmp(&self.value)
+        self.value.reverse_bits().cmp(&other.value.reverse_bits())
     }
 }
 

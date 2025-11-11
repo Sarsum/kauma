@@ -133,11 +133,6 @@ impl<M: ReducePoly> GF2mPoly<M> {
         Self { elems: out }.trim()
     }
 
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.elems.len().cmp(&other.elems.len())
-            .then_with(|| other.elems.cmp(&self.elems))
-    }
-
     fn square(&self) -> Self {
         if self.degree() == 0 {
             return Self::zero()
@@ -255,8 +250,7 @@ impl<M: ReducePoly> Ord for GF2mPoly<M> {
     fn cmp(&self, other: &Self) -> Ordering {
         // first, compare Poly degree only
         self.elems.len().cmp(&other.elems.len())
-            // then, compare b to a since GCM-convention polynoms are in BE and therefore higher GF elements smaller integers
-            .then_with(|| self.elems.cmp(&other.elems))
+            .then_with(|| self.elems.iter().rev().cmp(other.elems.iter().rev()))
     }
 }
 
