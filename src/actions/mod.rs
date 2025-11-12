@@ -146,6 +146,22 @@ pub enum Action {
         #[serde(rename="S")]
         s: ActionGfPoly,
         poly: ActionPoly
+    },
+    GfpolyFactorSff {
+        #[serde(rename="F")]
+        f: ActionGfPoly,
+        poly: ActionPoly
+    },
+    GfpolyFactorDdf {
+        #[serde(rename="F")]
+        f: ActionGfPoly,
+        poly: ActionPoly
+    },
+    GfpolyFactorEdf {
+        #[serde(rename="F")]
+        f: ActionGfPoly,
+        d: u32,
+        poly: ActionPoly
     }
 }
 
@@ -180,7 +196,10 @@ pub fn run_action(action: Action) -> Result<Value> {
         Action::GfpolyPow { b, e, poly } => gfpoly_actions::run_gfpoly_pow(b, e, poly),
         Action::GfpolyPowmod { b, e, m, poly } => gfpoly_actions::run_gfpoly_powmod(b, e.0, m, poly),
         Action::GfpolyDiff { f, poly } => gfpoly_actions::run_gfpoly_diff(f, poly),
-        Action::GfpolySqrt { s, poly } => gfpoly_actions::run_gfpoly_sqrt(s, poly)
+        Action::GfpolySqrt { s, poly } => gfpoly_actions::run_gfpoly_sqrt(s, poly),
+        Action::GfpolyFactorSff { f, poly } => gfpoly_actions::run_gfpoly_sff(f, poly),
+        Action::GfpolyFactorDdf { f, poly } => gfpoly_actions::run_gfpoly_ddf(f, poly),
+        Action::GfpolyFactorEdf { f, d, poly } => gfpoly_actions::run_gfpoly_edf(f, d as u128, poly)
     }
 }
 

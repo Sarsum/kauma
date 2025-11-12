@@ -62,7 +62,7 @@ pub fn run_gfpoly_divmod(a: ActionGfPoly, b: ActionGfPoly, poly: ActionPoly) -> 
 fn gfpoly_divmod<M: ReducePoly>(a: ActionGfPoly, b: ActionGfPoly) -> Result<Value> {
     let a = GF2mPoly::<M>::from_action_poly(a);
     let b = GF2mPoly::<M>::from_action_poly(b);
-    let (quotient, remainder) = gf_poly::divmod(a, &b);
+    let (quotient, remainder) = gf_poly::divmod(&a, &b);
     Ok(json!({"Q": quotient, "R": remainder}))
 }
 
@@ -76,7 +76,7 @@ pub fn run_gfpoly_gcd(a: ActionGfPoly, b: ActionGfPoly, poly: ActionPoly) -> Res
 fn gfpoly_gcd<M: ReducePoly>(a: ActionGfPoly, b: ActionGfPoly) -> Result<Value> {
     let a = GF2mPoly::<M>::from_action_poly(a);
     let b = GF2mPoly::<M>::from_action_poly(b);
-    let result = gf_poly::gcd(a, b);
+    let result = gf_poly::gcd(&a, &b);
     Ok(json!({"G": result}))
 }
 
@@ -102,7 +102,7 @@ pub fn run_gfpoly_powmod(b: ActionGfPoly, e: BigInt, modulus: ActionGfPoly, poly
 fn gfpoly_powmod<M: ReducePoly>(b: ActionGfPoly, e: BigInt, modulus: ActionGfPoly) -> Result<Value> {
     let b = GF2mPoly::<M>::from_action_poly(b);
     let modulus = GF2mPoly::<M>::from_action_poly(modulus);
-    let result = gf_poly::powmod(b, e, modulus);
+    let result = gf_poly::powmod(b, e, &modulus);
     Ok(json!({"Z": result}))
 }
 
@@ -128,4 +128,43 @@ pub fn run_gfpoly_sqrt(s: ActionGfPoly, poly: ActionPoly) -> Result<Value> {
 fn gfpoly_sqrt<M: ReducePoly>(s: ActionGfPoly) -> Result<Value> {
     let result = GF2mPoly::<M>::from_action_poly(s).sqrt();
     Ok(json!({"R": result}))
+}
+
+pub fn run_gfpoly_sff(f: ActionGfPoly, poly: ActionPoly) -> Result<Value> {
+    return match poly {
+        ActionPoly::P1 => gfpoly_sff::<P1>(f),
+        ActionPoly::P2 => gfpoly_sff::<P2>(f)
+    };
+}
+
+fn gfpoly_sff<M: ReducePoly>(f: ActionGfPoly) -> Result<Value> {
+    let poly = GF2mPoly::<M>::from_action_poly(f).make_monic();
+    let result = gf_poly::sff(poly)?;
+    Ok(json!({"factors": result}))
+}
+
+pub fn run_gfpoly_ddf(f: ActionGfPoly, poly: ActionPoly) -> Result<Value> {
+    return match poly {
+        ActionPoly::P1 => gfpoly_ddf::<P1>(f),
+        ActionPoly::P2 => gfpoly_ddf::<P2>(f)
+    }
+}
+
+fn gfpoly_ddf<M: ReducePoly>(f: ActionGfPoly) -> Result<Value> {
+    let poly = GF2mPoly::<M>::from_action_poly(f).make_monic();
+    let result = gf_poly::ddf(poly)?;
+    Ok(json!({"factors": result}))
+}
+
+pub fn run_gfpoly_edf(f: ActionGfPoly, d: u128, poly: ActionPoly) -> Result<Value> {
+    return match poly {
+        ActionPoly::P1 => gfpoly_edf::<P1>(f, d),
+        ActionPoly::P2 => gfpoly_edf::<P2>(f, d)
+    }
+}
+
+fn gfpoly_edf<M: ReducePoly>(f: ActionGfPoly, d: u128) -> Result<Value> {
+    let poly = GF2mPoly::<M>::from_action_poly(f).make_monic();
+    let result = gf_poly::edf(poly, d)?;
+    Ok(json!({"factors": result}))
 }

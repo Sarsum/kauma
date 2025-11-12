@@ -1,7 +1,8 @@
-use std::{cmp::{Ordering, max}, ops::{Add, Mul, MulAssign}};
+use std::{cmp::{Ordering, max}, ops::{Add, Div, Mul, MulAssign}};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use num::{BigInt, One, Zero};
+use rand::Rng;
 use serde::{Serialize, ser::SerializeSeq};
 
 use crate::{actions::ActionGfPoly, utils::gf::{GF2m, ReducePoly}};
@@ -20,6 +21,10 @@ impl<M: ReducePoly> GF2mPoly<M> {
     }
 
     pub fn make_monic(mut self) -> GF2mPoly<M> {
+        // nothing to do
+        if self.elems[self.elems.len() - 1] == GF2m::<M>::one() {
+            return self
+        }
         let inv = self.elems[self.elems.len() - 1].clone().inv();
         for i in 0..self.elems.len() {
             self.elems[i] *= &inv;
@@ -33,6 +38,10 @@ impl<M: ReducePoly> GF2mPoly<M> {
 
     pub fn one() -> GF2mPoly<M> {
         Self { elems: vec![GF2m::<M>::one()] }
+    }
+
+    pub fn one_x() -> GF2mPoly<M> {
+        Self::new_single_term(GF2m::<M>::one(), 1)
     }
 
     pub fn is_zero(&self) -> bool {
@@ -163,6 +172,10 @@ impl<M: ReducePoly> GF2mPoly<M> {
         }
         result
     }
+
+    pub fn get_highest_coefficient(&self) -> &GF2m<M> {
+        &self.elems[self.elems.len() - 1]
+    }
 }
 
 impl<M: ReducePoly> Add for GF2mPoly<M> {
@@ -196,6 +209,12 @@ impl<M: ReducePoly> MulAssign<&GF2mPoly<M>> for GF2mPoly<M> {
     }
 }
 
+impl<M: ReducePoly> Clone for GF2mPoly<M> {
+    fn clone(&self) -> Self {
+        Self { elems: self.elems.clone() }
+    }
+}
+
 impl<M: ReducePoly> Serialize for GF2mPoly<M> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -208,8 +227,8 @@ impl<M: ReducePoly> Serialize for GF2mPoly<M> {
     }
 }
 
-pub fn divmod<M: ReducePoly>(lhs: GF2mPoly<M>, rhs: &GF2mPoly<M>) -> (GF2mPoly<M>, GF2mPoly<M>) {
-    let mut remainder = lhs;
+pub fn divmod<M: ReducePoly>(lhs: &GF2mPoly<M>, rhs: &GF2mPoly<M>) -> (GF2mPoly<M>, GF2mPoly<M>) {
+    let mut remainder = lhs.clone();
     let mut quotient = GF2mPoly::<M>::zero();
 
     while remainder.degree() >= rhs.degree() {
@@ -230,6 +249,18 @@ pub fn divmod<M: ReducePoly>(lhs: GF2mPoly<M>, rhs: &GF2mPoly<M>) -> (GF2mPoly<M
         quotient = quotient + quot;
     }
     (quotient, remainder)
+}
+
+impl<M: ReducePoly> Div<&GF2mPoly<M>> for &GF2mPoly<M> {
+    type Output = Result<GF2mPoly<M>>;
+
+    fn div(self, rhs: &GF2mPoly<M>) -> Self::Output {
+        let (q, r) = divmod(self, rhs);
+        if r != GF2mPoly::<M>::zero() {
+            return Err(anyhow!("GFPoly division divmod did not return rest zero"))
+        }
+        Ok(q)
+    }
 }
 
 impl<M: ReducePoly> PartialEq for GF2mPoly<M> {
@@ -254,17 +285,19 @@ impl<M: ReducePoly> Ord for GF2mPoly<M> {
     }
 }
 
-pub fn gcd<M: ReducePoly>(mut a: GF2mPoly<M>, mut b: GF2mPoly<M>) -> GF2mPoly<M> {
+pub fn gcd<M: ReducePoly>(a: &GF2mPoly<M>, b: &GF2mPoly<M>) -> GF2mPoly<M> {
     // handle edgecases a or b == 0
     if a.is_zero() {
-        return b.make_monic();
+        return b.clone().make_monic();
     }
     if b.is_zero() {
-        return a.make_monic();
+        return a.clone().make_monic();
     }
+    let mut a = a.clone();
+    let mut b = b.clone();
     while !b.is_zero() {
         // a = q * b + r
-        let (_q, r) = divmod(a, &b);
+        let (_q, r) = divmod(&a, &b);
         a = b;
         b = r;
     }
@@ -272,9 +305,9 @@ pub fn gcd<M: ReducePoly>(mut a: GF2mPoly<M>, mut b: GF2mPoly<M>) -> GF2mPoly<M>
     a.make_monic()
 }
 
-pub fn powmod<M: ReducePoly>(base: GF2mPoly<M>, mut exp: BigInt, modulus: GF2mPoly<M>) -> GF2mPoly<M> {
+pub fn powmod<M: ReducePoly>(base: GF2mPoly<M>, mut exp: BigInt, modulus: &GF2mPoly<M>) -> GF2mPoly<M> {
     // reduce base in case its bigger than modulus
-    let (_, mut base_reduced) = divmod(base, &modulus);
+    let (_, mut base_reduced) = divmod(&base, modulus);
 
     let mut result = GF2mPoly::<M>::one();
 
@@ -282,15 +315,126 @@ pub fn powmod<M: ReducePoly>(base: GF2mPoly<M>, mut exp: BigInt, modulus: GF2mPo
     while &exp > &BigInt::zero() {
         if &exp & &BigInt::one() != BigInt::zero() {
             let prod = &result * &base_reduced;
-            let (_, reduced) = divmod(prod, &modulus);
+            let (_, reduced) = divmod(&prod, modulus);
             result = reduced;
         }
         exp >>= 1;
         if &exp > &BigInt::zero() {
             let square = base_reduced.square();
-            let (_, reduced) = divmod(square, &modulus);
+            let (_, reduced) = divmod(&square, modulus);
             base_reduced = reduced;
         }
     }
     result
+}
+
+#[derive(Serialize)]
+#[serde(bound(serialize = "GF2mPoly<M>: Serialize"))]
+pub struct PolySffFactor<M: ReducePoly> {
+    pub factor: GF2mPoly<M>,
+    pub exponent: u128
+}
+
+pub fn sff<M: ReducePoly>(mut f: GF2mPoly<M>) -> Result<Vec<PolySffFactor<M>>> {
+    // ensure poly is monic
+    f = f.make_monic();
+    // implementation from the slides
+    let f_d = f.diff();
+    let mut c = gcd(&f.clone(), &f_d);
+    f = (&f / &c)?;
+    let mut z: Vec<PolySffFactor<M>> = Vec::new();
+    let mut exponent = 1u128;
+    while f != GF2mPoly::<M>::one() {
+        let y = gcd(&f, &c);
+        if f != y {
+            z.push(PolySffFactor { factor: (&f / &y)?, exponent: exponent });
+        }
+        c = (&c / &y)?;
+        f = y;
+        exponent += 1;
+    }
+
+    if c != GF2mPoly::<M>::one() {
+        for elem in sff(c.sqrt())? {
+            z.push(PolySffFactor { factor: elem.factor, exponent: elem.exponent * 2 });
+        }
+    }
+    // honestly, I dont want to implement the sorting egain (PartialEq, Eq, PartialOrd, Ord)
+    // hence, I am just doing it here
+    z.sort_by(|a, b| a.exponent.cmp(&b.exponent).then_with(|| a.factor.cmp(&b.factor)));
+    Ok(z)
+}
+
+#[derive(Serialize)]
+#[serde(bound(serialize = "GF2mPoly<M>: Serialize"))]
+pub struct PolyDdfFactor<M: ReducePoly> {
+    pub factor: GF2mPoly<M>,
+    pub degree: u128,
+}
+
+pub fn ddf<M: ReducePoly>(f: GF2mPoly<M>) -> Result<Vec<PolyDdfFactor<M>>> {
+    let q: BigInt = BigInt::one() << 128;
+    let mut z: Vec<PolyDdfFactor<M>> = Vec::new();
+    let mut d = 1 as u32;
+    let mut fstar = f.clone();
+
+    while fstar.degree() as u32 >= 2 * d {
+        // TODO: can we reuse the previous h and just recalculate the new base in case g == 1?
+        let h = powmod(GF2mPoly::<M>::one_x(), q.clone().pow(d), &fstar) + GF2mPoly::<M>::one_x();
+        //let h = powmod(h + GF2mPoly::<M>::one_x(), BigInt::one(), &fstar);
+        let g = gcd(&h, &fstar);
+        if g != GF2mPoly::<M>::one() {
+            fstar = (&fstar / &g)?;
+            z.push(PolyDdfFactor { factor: g, degree: d as u128 });
+        }
+        d += 1;
+    }
+
+    if fstar != GF2mPoly::<M>::one() {
+        z.push(PolyDdfFactor { degree: fstar.degree() as u128, factor: fstar });
+    } else if z.len() == 0 {
+        z.push(PolyDdfFactor { factor: f, degree: 1 });
+    }
+
+    z.sort_by(|a, b| a.degree.cmp(&b.degree).then_with(|| a.factor.cmp(&b.factor)));
+    Ok(z)
+}
+
+fn random_poly<M: ReducePoly>(max_len_exl: u128) -> GF2mPoly<M> {
+    let mut rng = rand::rng();
+    // end of range is exclusive
+    let len = rng.random_range(1..max_len_exl);
+    let mut elems: Vec<GF2m<M>> = Vec::with_capacity(len as usize);
+    for _ in 0..len {
+        elems.push(GF2m::new(rng.random()));
+    }
+    GF2mPoly { elems: elems }
+}
+
+pub fn edf<M: ReducePoly>(f: GF2mPoly<M>, d: u128) -> Result<Vec<GF2mPoly<M>>> {
+    let q: BigInt = BigInt::one() << 128;
+    let f_deg = f.degree() as u128;
+    let n = f_deg / d;
+    let mut z  = vec![f.clone()];
+
+    while (z.len() as u128) < n {
+        let h = random_poly::<M>(f_deg);
+        let g = powmod(h, (q.clone().pow(d as u32) - 1) / 3, &f) + GF2mPoly::<M>::one();
+
+        for i in 0..z.len() {
+            let u = z.swap_remove(i);
+            if u.degree() as u128 > d {
+                let j = gcd(&u, &g);
+                if j != GF2mPoly::<M>::one() && j != u {
+                    z.push((&u / &j)?);
+                    z.push(j);
+                    continue;
+                }
+            }
+            z.push(u);
+        }
+    }
+
+    z.sort();
+    Ok(z)
 }
