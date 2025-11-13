@@ -33,7 +33,7 @@ impl<M: ReducePoly> GF2mPoly<M> {
     }
 
     pub fn zero() -> GF2mPoly<M> {
-        Self { elems: Vec::new() }
+        Self { elems: vec![GF2m::<M>::zero()] }
     }
 
     pub fn one() -> GF2mPoly<M> {
@@ -45,11 +45,11 @@ impl<M: ReducePoly> GF2mPoly<M> {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.degree() == 0
+        self.degree() == 0 && self.elems[0].is_zero()
     }
 
     pub fn degree(&self) -> usize {
-        self.elems.len()
+        self.elems.len() - 1
     }
 
     pub fn new_single_term(coeff: GF2m<M>, degree: usize) -> Self {
@@ -59,7 +59,8 @@ impl<M: ReducePoly> GF2mPoly<M> {
     }
 
     fn trim(mut self) -> Self {
-        while self.elems.last().map_or(false, |coeff| coeff.is_zero()) {
+        // do not pop zero coeff for poly of degree 0 
+        while self.degree() > 0 && self.elems.last().map_or(false, |coeff| coeff.is_zero()) {
             self.elems.pop();
         }
         self
@@ -84,6 +85,9 @@ impl<M: ReducePoly> GF2mPoly<M> {
                 result.push(rhs.elems[i].clone());
             }
         }
+        if result.is_empty() {
+            result.push(GF2m::zero());
+        }
         Self { elems: result }.trim()
     }
 
@@ -95,6 +99,7 @@ impl<M: ReducePoly> GF2mPoly<M> {
         }
         let size_res = max(size_self + size_rhs - 1, 1);
         let mut product: Vec<GF2m<M>> = Vec::with_capacity(size_res);
+        product.push(GF2m::zero());
 
         // multiply each a with each b --> for in for loop
         for l_i in 0..size_self {
@@ -102,7 +107,7 @@ impl<M: ReducePoly> GF2mPoly<M> {
                 let index = l_i + r_i;
                 let result = &self.elems[l_i] * &rhs.elems[r_i];
                 // element at index present, add result to existing GF elem
-                if product.len() > index {
+                if product.len() >= index + 1 {
                     product[index] += result;
                 } else {
                     product.push(result);
@@ -143,9 +148,6 @@ impl<M: ReducePoly> GF2mPoly<M> {
     }
 
     fn square(&self) -> Self {
-        if self.degree() == 0 {
-            return Self::zero()
-        }
         // squaring is 2n - 1
         let size = self.elems.len() * 2 - 1;
         let mut out = Vec::with_capacity(size);
@@ -154,6 +156,7 @@ impl<M: ReducePoly> GF2mPoly<M> {
             out.push(coeff.square());
             out.push(GF2m::<M>::zero());
         }
+        out.push(GF2m::zero());
         Self { elems: out }.trim()
     }
 
@@ -234,19 +237,19 @@ pub fn divmod<M: ReducePoly>(lhs: &GF2mPoly<M>, rhs: &GF2mPoly<M>) -> (GF2mPoly<
     while remainder.degree() >= rhs.degree() {
         let rem_deg = remainder.degree();
         let rhs_deg = rhs.degree();
-        let exp_rem = remainder.elems[rem_deg - 1].clone();
-        let exp_rhs = rhs.elems[rhs_deg - 1].clone();
+        let exp_rem = remainder.elems[rem_deg].clone();
+        let exp_rhs = rhs.elems[rhs_deg].clone();
 
         let deg_diff = rem_deg - rhs_deg;
         // normally, c = 1/a * 1/b, but as we are XORing during addition, we do not need to invert exp_rem
         let exp_quot = exp_rem * exp_rhs.inv();
         let quot = GF2mPoly::<M>::new_single_term(exp_quot, deg_diff);
-        remainder = remainder + (GF2mPoly::<M>::mul_borrowed(&rhs, &quot));
+        remainder = remainder + (rhs * &quot);
+        quotient = quotient + quot;
         if remainder.degree() >= rem_deg {
             // Something went wrong, lets break and return wrong result instead of running into an endless loop
             break;
         }
-        quotient = quotient + quot;
     }
     (quotient, remainder)
 }
@@ -308,7 +311,8 @@ pub fn gcd<M: ReducePoly>(a: &GF2mPoly<M>, b: &GF2mPoly<M>) -> GF2mPoly<M> {
 pub fn powmod<M: ReducePoly>(base: GF2mPoly<M>, mut exp: BigInt, modulus: &GF2mPoly<M>) -> GF2mPoly<M> {
     // reduce base in case its bigger than modulus
     let (_, mut base_reduced) = divmod(&base, modulus);
-
+    //eprintln!("base_reduced: {}", json!(base_reduced));
+    //let mut base_reduced = base;
     let mut result = GF2mPoly::<M>::one();
 
     // square and mul is ugly due to BigInt for hex numbers
@@ -340,7 +344,7 @@ pub fn sff<M: ReducePoly>(mut f: GF2mPoly<M>) -> Result<Vec<PolySffFactor<M>>> {
     f = f.make_monic();
     // implementation from the slides
     let f_d = f.diff();
-    let mut c = gcd(&f.clone(), &f_d);
+    let mut c = gcd(&f, &f_d);
     f = (&f / &c)?;
     let mut z: Vec<PolySffFactor<M>> = Vec::new();
     let mut exponent = 1u128;
