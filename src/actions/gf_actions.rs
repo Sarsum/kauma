@@ -15,9 +15,8 @@ pub fn run_gf_mul(a: u128, b: u128, poly: ActionPoly) -> Result<Value> {
 fn gf_mul<M: ReducePoly>(a: u128, b: u128) -> Result<Value> {
     let a_typed = GF2m::<M>::new(a);
     let b_typed = GF2m::<M>::new(b);
-    let y = BASE64_STANDARD.encode((a_typed * b_typed).value.to_be_bytes());
 
-    Ok(json!({"y": y}))
+    Ok(json!({"y": a_typed * b_typed}))
 }
 
 pub fn run_gf_pow(b: u128, exp: BigInt, poly: ActionPoly) -> Result<Value> {
@@ -29,9 +28,7 @@ pub fn run_gf_pow(b: u128, exp: BigInt, poly: ActionPoly) -> Result<Value> {
 
 fn gf_pow<M: ReducePoly>(b: u128, exp: BigInt) -> Result<Value> {
     let result = GF2m::<M>::new(b).pow(exp);
-    let y = BASE64_STANDARD.encode(result.value.to_be_bytes());
-
-    Ok(json!({"y": y}))
+    Ok(json!({"y": result}))
 }
 
 pub fn run_gf_inv(x: u128, poly: ActionPoly) -> Result<Value> {
@@ -43,9 +40,7 @@ pub fn run_gf_inv(x: u128, poly: ActionPoly) -> Result<Value> {
 
 fn gf_inv<M: ReducePoly>(x: u128) -> Result<Value> {
     let result = GF2m::<M>::new(x).inv();
-    let y = BASE64_STANDARD.encode(result.value.to_be_bytes());
-
-    Ok(json!({"y": y}))
+    Ok(json!({"y": result}))
 }
 
 pub fn run_gf_div(a: u128, b: u128, poly: ActionPoly) -> Result<Value> {
@@ -57,9 +52,7 @@ pub fn run_gf_div(a: u128, b: u128, poly: ActionPoly) -> Result<Value> {
 
 fn gf_div<M: ReducePoly>(a: u128, b: u128) -> Result<Value> {
     let result = GF2m::<M>::new(a) / GF2m::<M>::new(b);
-    let q = BASE64_STANDARD.encode(result.value.to_be_bytes());
-
-    Ok(json!({"q": q}))
+    Ok(json!({"q": result}))
 }
 
 pub fn run_gf_sqrt(x: u128, poly: ActionPoly) -> Result<Value> {
@@ -71,11 +64,11 @@ pub fn run_gf_sqrt(x: u128, poly: ActionPoly) -> Result<Value> {
 
 fn gf_sqrt<M: ReducePoly>(x: u128) -> Result<Value> {
     let result = GF2m::<M>::new(x).sqrt();
-    Ok(json!({"y": BASE64_STANDARD.encode(result.value.to_be_bytes())}))
+    Ok(json!({"y": result}))
 }
 
 pub fn run_gf_divmod(a: u128, b: u128) -> Result<Value> {
-    let result = utils::divmod(a, b)?;
-    Ok(json!({"q": BASE64_STANDARD.encode(result.0.to_be_bytes()),
-            "r": BASE64_STANDARD.encode(result.1.to_be_bytes())}))
+    let (q, r) = utils::divmod(a, b)?;
+    Ok(json!({"q": BASE64_STANDARD.encode(q.reverse_bits().to_be_bytes()),
+            "r": BASE64_STANDARD.encode(r.reverse_bits().to_be_bytes())}))
 }

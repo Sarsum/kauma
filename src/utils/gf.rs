@@ -31,7 +31,8 @@ impl ReducePoly for P1 {
     const DEG: u32 = 128;
     // AES-GCM polynom order x0 ... x127
     // therefore, this is 1 + a + a2 + a7 + a128
-    const MOD: u128 = (1u128 << 127) | (1u128 << 126) | (1u128 << 125) | (1u128 << 120);
+    //const MOD: u128 = (1u128 << 127) | (1u128 << 126) | (1u128 << 125) | (1u128 << 120);
+    const MOD: u128 = 1u128 | (1u128 << 1) | (1u128 << 2) | (1u128 << 7);
 }
 
 #[derive(Debug)]
@@ -39,7 +40,8 @@ pub enum P2 {}
 impl ReducePoly for P2 {
     const DEG: u32 = 128;
     // Same as above, this is 1 + a33 + a69 + a98 + a128
-    const MOD: u128 = (1u128 << 127) | (1u128 << 94) | (1u128 << 58) | (1u128 << 29);
+    //const MOD: u128 = (1u128 << 127) | (1u128 << 94) | (1u128 << 58) | (1u128 << 29);
+    const MOD : u128 = (1u128) | (1u128 << 33) | (1u128 << 69) | (1u128 << 98);
 }
 
 impl <M: ReducePoly> GF2m<M> {
@@ -56,7 +58,7 @@ impl <M: ReducePoly> GF2m<M> {
     }
 
     pub fn one() -> Self {
-        Self { value: 1u128 << (M::DEG - 1), _m: Default::default() }
+        Self { value: 1u128, _m: Default::default() }
     }
 
     pub fn mul(self, rhs: Self) -> Self {
@@ -133,7 +135,7 @@ impl <M: ReducePoly> GF2m<M> {
         hi
     }
 
-    pub fn square_fast(&self) -> Self {
+    fn square_fast(&self) -> Self {
         // square by putting a zero after each bit going from MSB to LSB
         let (hi, lo) = Self::interlace_zeros_msb_u128(self.value);
 
@@ -144,10 +146,10 @@ impl <M: ReducePoly> GF2m<M> {
 
 
     pub fn square(&self) -> Self {
-        //Self::new(self.value) * self
+        self * self
         // performance is SLIGHTLY better, talking again about 0.05 - 0.07 seconds at best for 10.000 cases
         // was hell of a rabbit hole to get the reduce working, keeping it as an easter egg
-        self.square_fast()
+        //self.square_fast()
     }
 
     pub fn pow(mut self, mut exp: BigInt) -> Self {
@@ -194,21 +196,19 @@ impl <M: ReducePoly> GF2m<M> {
     }
 }
 
-fn mul_u128(lhs: u128, rhs: u128, poly: u128, degree: u32) -> u128 {
-    // NIST SP 800-38D implementation for AES-GCM multiplication
-    // The variable names are derived from there
+fn mul_u128(mut lhs: u128, mut rhs: u128, poly: u128, degree: u32) -> u128 {
+    let top = 1u128 << (degree - 1);
     let mut z = 0u128;
-    let mut v = rhs;
-    // M::DEG is 128, therefore we need to substract one when calculating the index
-    for i in 0..degree {
-        if lhs & (1u128 << (degree - 1 - i)) != 0 {
-            z ^= v
+    for _ in 0..degree {
+        if lhs & 1 != 0 {
+            z ^= rhs;
         }
-        if v & 1 == 0 {
-            v >>= 1;
-        } else {
-            v = (v >> 1) ^ poly
+        let carry = (rhs & top) != 0;
+        rhs <<= 1;
+        if carry {
+            rhs ^= poly;
         }
+        lhs >>=1;
     }
     z
 }
@@ -286,7 +286,7 @@ impl<M: ReducePoly> Serialize for GF2m<M> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer {
-        let b64 = BASE64_STANDARD.encode(self.value.to_be_bytes());
+        let b64 = BASE64_STANDARD.encode(self.value.reverse_bits().to_be_bytes());
         serializer.serialize_str(&b64)
     }
 }
@@ -303,7 +303,7 @@ impl<M: ReducePoly> Eq for GF2m<M> {}
 impl<M: ReducePoly> Ord for GF2m<M> {
     fn cmp(&self, other: &Self) -> Ordering {
         // GCM convention smaller numbers bigger value
-        self.value.reverse_bits().cmp(&other.value.reverse_bits())
+        self.value.cmp(&other.value)
     }
 }
 

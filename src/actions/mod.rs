@@ -305,7 +305,7 @@ impl<'de> Deserialize<'de> for ActionGfU128 {
                 return match BASE64_STANDARD.decode(s) {
                     Ok(bytes) => {
                         return match <[u8; 16]>::try_from(bytes) {
-                            Ok(num) => Ok(ActionGfU128(u128::from_be_bytes(num))),
+                            Ok(num) => Ok(ActionGfU128(u128::from_be_bytes(num).reverse_bits())),
                             Err(err) => {
                                 eprintln!("err");
                                 Err(E::custom(format!("Error parsing {:x?} as 16 bytes into u128. Actual lenght: {}", err, err.len())))

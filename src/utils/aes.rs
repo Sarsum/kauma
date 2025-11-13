@@ -23,7 +23,7 @@ pub fn gcm_encrypt<M: ReducePoly>(nonce: &[u8; 12], key: &[u8; 16], plaintext: V
     }
     let auth_key: [u8; 16] = encrypter_buffer[..16].try_into().map_err(|_| anyhow!("error converting buffer auth key into 16 byte vec"))?;
 
-    let auth_key_gf = GF2m::<M>::new(u128::from_be_bytes(auth_key));
+    let auth_key_gf = GF2m::<M>::new(u128::from_be_bytes(auth_key).reverse_bits());
 
     // Create keystream including H, passing slice with H to subfunctions
     let plain_len = plaintext.len();
@@ -32,7 +32,7 @@ pub fn gcm_encrypt<M: ReducePoly>(nonce: &[u8; 12], key: &[u8; 16], plaintext: V
     // start counter at 2; one block more because we want H
     let keystream = generate_keystream(&mut encrypter, nonce, 1, keystream_blocks + 1)?;
 
-    let auth_tag_xor = u128::from_be_bytes(get_16_bytes(&keystream[0..16])?);
+    let auth_tag_xor = u128::from_be_bytes(get_16_bytes(&keystream[0..16])?).reverse_bits();
 
     let mut auth_tag = GF2m::<M>::zero();
 
@@ -47,11 +47,11 @@ pub fn gcm_encrypt<M: ReducePoly>(nonce: &[u8; 12], key: &[u8; 16], plaintext: V
     let l = (ad.len() as u128 * 8) << 64 | (plain_len as u128 * 8);
     ghash_apply_block(&mut auth_tag, l, &auth_key_gf);
 
-    return Ok(AesGcmResult { ciphertext: ciphertext, tag: (auth_tag.value ^ auth_tag_xor).to_be_bytes(), l: l.to_be_bytes(), h: auth_key});
+    return Ok(AesGcmResult { ciphertext: ciphertext, tag: (auth_tag.value ^ auth_tag_xor).reverse_bits().to_be_bytes(), l: l.to_be_bytes(), h: auth_key});
 }
 
 fn ghash_apply_block<M: ReducePoly>(auth_tag: &mut GF2m<M>, xor_val: u128, auth_key: &GF2m<M>) {
-    *auth_tag ^= xor_val;
+    *auth_tag ^= xor_val.reverse_bits();
     *auth_tag *= auth_key;
 }
 

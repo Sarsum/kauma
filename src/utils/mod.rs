@@ -28,21 +28,24 @@ pub fn divmod(dividend: u128, divisor: u128) -> Result<(u128, u128)> {
     if divisor == 0 {
         return Err(anyhow!("Divmod: division by zero!"))
     }
+    if dividend == 0 {
+        return Ok((0, 0));
+    }
     // only calculate the degree of the divisor once
-    let degree_divisor = 128 - divisor.trailing_zeros();
+    let degree_divisor = 127 - divisor.leading_zeros();
     let mut quotient = 0u128;
     let mut remainder = dividend;
 
     while remainder != 0 {
-        let degree_remainer = 128 - remainder.trailing_zeros();
+        let degree_remainer = 127 - remainder.leading_zeros();
         if degree_remainer < degree_divisor {
             break;
         }
         
-        // Add divided degree to quotient
-        quotient ^= 1u128 << (127 - (degree_remainer - degree_divisor));
+        // Add dividend degree to quotient
+        quotient ^= 1u128 << (degree_remainer - degree_divisor);
         // Eliminate the hightest exponent
-        remainder ^= divisor >> (degree_remainer - degree_divisor);
+        remainder ^= divisor << (degree_remainer - degree_divisor);
     }
     Ok((quotient, remainder))
 }
