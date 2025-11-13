@@ -16,6 +16,8 @@ jobs:
           submodules: true # pull https://github.com/Sarsum/TINF23CS-kauma-tests/ into testing/
       - name: Build kauma binary
         run: "$GITHUB_WORKSPACE/build"
+      - name: Run Rust tests # after building because the build script sets up the vendor location and goes into the correct directory
+        run: cargo test
       - name: Download padding-oracle-server-rs
         run: |
           curl -L "$PADDING_ORACLE_SERVER_RS_URL" -o padding-oracle-server.tar.xz

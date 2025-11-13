@@ -23,6 +23,8 @@ impl<M: ReducePoly> Clone for GF2m<M> {
 pub trait ReducePoly {
     const DEG: u32;
     const MOD: u128;
+
+    fn reduce_256(hi: u128, lo: u128) -> u128;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -33,6 +35,20 @@ impl ReducePoly for P1 {
     // therefore, this is 1 + a + a2 + a7 + a128
     //const MOD: u128 = (1u128 << 127) | (1u128 << 126) | (1u128 << 125) | (1u128 << 120);
     const MOD: u128 = 1u128 | (1u128 << 1) | (1u128 << 2) | (1u128 << 7);
+
+    fn reduce_256(hi: u128, lo: u128) -> u128 {
+        // First fold: hi * (x^7 + x^2 + x + 1)
+        let s = hi ^ (hi << 1) ^ (hi << 2) ^ (hi << 7);
+
+        // Overflows from those shifts (bits that crossed past bit 127)
+        let c = (hi >> 127) ^ (hi >> 126) ^ (hi >> 121);
+
+        // Reduce the overflow once more by r(x)
+        let cf = c ^ (c << 1) ^ (c << 2) ^ (c << 7);
+
+        // Final reduced 128-bit value
+        lo ^ s ^ cf
+    }
 }
 
 #[derive(Debug)]
@@ -42,6 +58,34 @@ impl ReducePoly for P2 {
     // Same as above, this is 1 + a33 + a69 + a98 + a128
     //const MOD: u128 = (1u128 << 127) | (1u128 << 94) | (1u128 << 58) | (1u128 << 29);
     const MOD : u128 = (1u128) | (1u128 << 33) | (1u128 << 69) | (1u128 << 98);
+
+    fn reduce_256(hi: u128, lo: u128) -> u128 {
+        // m(x) = x^128 + x^98 + x^69 + x^33 + 1
+        const A: u32 = 33;
+        const B: u32 = 69;
+        const C: u32 = 98;
+
+        #[inline(always)]
+        fn fold(y: u128) -> u128 {
+            y ^ (y << A) ^ (y << B) ^ (y << C)
+        }
+
+        #[inline(always)]
+        fn carry(y: u128) -> u128 {
+            (y >> (128 - A)) ^ (y >> (128 - B)) ^ (y >> (128 - C))
+            // i.e., (y >> 95) ^ (y >> 59) ^ (y >> 30)
+        }
+
+        let mut out = lo ^ fold(hi);
+        let mut c = carry(hi);
+
+        // Iterate carries until nothing remains. Typically a few iterations at most.
+        while c != 0 {
+            out ^= fold(c);
+            c = carry(c);
+        }
+        out
+    }
 }
 
 impl <M: ReducePoly> GF2m<M> {
@@ -83,73 +127,53 @@ impl <M: ReducePoly> GF2m<M> {
         if is_x86_feature_detected!("bmi2") {
             unsafe {
                 // Keep bits masked with 1: 101010101010......1010
-                return core::arch::x86_64::_pdep_u64(x as u64, 0xAAAA_AAAA_AAAA_AAAA)
+                return core::arch::x86_64::_pdep_u64(x as u64, 0x5555_5555_5555_5555u64)
             }
         }
         // fallback for chips without BMI2 (older / other architecture)
         let mut x = (x as u64) << 32;
-        x = (x | (x >> 16)) & 0xFFFF_0000_FFFF_0000;
-        x = (x | (x >> 8))  & 0xFF00_FF00_FF00_FF00;
-        x = (x | (x >> 4))  & 0xF0F0_F0F0_F0F0_F0F0;
-        x = (x | (x >> 2))  & 0xCCCC_CCCC_CCCC_CCCC;
-        x = (x | (x >> 1))  & 0xAAAA_AAAA_AAAA_AAAA;
+        x = (x | (x >> 16)) & 0x0000_FFFF_0000_FFFF;
+        x = (x | (x >> 8))  & 0x00FF_00FF_00FF_00FF;
+        x = (x | (x >> 4))  & 0x0F0F_0F0F_0F0F_0F0F;
+        x = (x | (x >> 2))  & 0x3333_3333_3333_3333;
+        x = (x | (x >> 1))  & 0x5555_5555_5555_5555;
         x
     }
 
-    fn interlace_zeros_msb_u128(input: u128) -> (u128, u128) {
+    fn interlace_zeros_lsb_u128(input: u128) -> (u128, u128) {
         // split num into 4 32-bit blocks due to CPU feature supporting 32bit to 64bit block
-        let w0 = (input >> 96) as u32; // x^0 ... x^31
-        let w1 = (input >> 64) as u32; // x^32 ... x^63
-        let w2 = (input >> 32) as u32; // x^64 ... x^95
-        let w3 = (input) as u32;       // x^96 ... x^127
+        let w0 = input as u32; // x^31 .. x^0
+        let w1 = (input >> 32) as u32; // x^63 .. x^32
+        let w2 = (input >> 64) as u32; // x^95 .. x^64
+        let w3 = (input >> 96) as u32; // x^127 .. x^96
 
-        let o0 = Self::spread32(w0); // x^0 ... x^63
-        let o1 = Self::spread32(w1); // x^64 ... x^127
-        let o2 = Self::spread32(w2); // x^128 ... x^191
-        let o3 = Self::spread32(w3); // x^192 ... x^255
+        let o0 = Self::spread32(w0); // x^63 .. x^0 
+        let o1 = Self::spread32(w1); // x^127 .. x^64 
+        let o2 = Self::spread32(w2); // x^191 .. x^128
+        let o3 = Self::spread32(w3); // x^255 .. x^192
 
-        // merge blocks into hi and lo, where hi = x^0 .. x^127 and lo = x^128 ... x^255
-        let hi = ((o0 as u128) << 64) | (o1 as u128);
-        let lo = ((o2 as u128) << 64) | (o3 as u128);
+        // merge blocks into hi and lo, where hi = lo = x^255 .. x^128 and x^127 .. x^0
+        let lo = ((o1 as u128) << 64) | (o0 as u128);
+        let hi = ((o3 as u128) << 64) | (o2 as u128);
 
         (hi, lo)
     }
 
-    fn reduce_256(mut hi: u128, mut lo: u128) -> u128 {
-        while lo != 0 {
-            let highest_bit = lo.trailing_zeros();
-            let bit_pos = 127 - highest_bit;
-            
-            // reduce high for the bit set in low
-            hi ^= M::MOD >> bit_pos;
-
-            // x^128 is set, we reduced it above already
-            // would create a loop when not checked
-            if bit_pos != 0 {
-                // put overflowing reduce poly bits into low
-                lo ^= M::MOD << (highest_bit + 1);
-            }
-            // clear bit we just reduced
-            lo ^= 1u128 << highest_bit;
-        }
-        hi
-    }
-
     fn square_fast(&self) -> Self {
         // square by putting a zero after each bit going from MSB to LSB
-        let (hi, lo) = Self::interlace_zeros_msb_u128(self.value);
+        let (hi, lo) = Self::interlace_zeros_lsb_u128(self.value);
 
         // reduce the 256 bits back into 128 for our polynomial form
-        let reduced = Self::reduce_256(hi, lo);
+        let reduced = M::reduce_256(hi, lo);
         Self::new(reduced)
     }
 
 
     pub fn square(&self) -> Self {
-        self * self
+        //self * self
         // performance is SLIGHTLY better, talking again about 0.05 - 0.07 seconds at best for 10.000 cases
         // was hell of a rabbit hole to get the reduce working, keeping it as an easter egg
-        //self.square_fast()
+        self.square_fast()
     }
 
     pub fn pow(mut self, mut exp: BigInt) -> Self {
@@ -312,4 +336,42 @@ impl<M: ReducePoly> PartialOrd for GF2m<M> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
+}
+
+#[test]
+// interlacing is not dependend on P1/P2, therefore testing with P1
+fn test_interlacing() {
+    let x: u128 = 1;
+    let (hi, lo) = GF2m::<P1>::interlace_zeros_lsb_u128(x);
+    assert_eq!(hi, 0);
+    assert_eq!(lo, 1u128);
+
+    let x: u128 = (1 << 64) | (1 << 31);
+    let (hi, lo) = GF2m::<P1>::interlace_zeros_lsb_u128(x);
+    assert_eq!(hi, 1);
+    assert_eq!(lo, (1 << 62));
+
+    let x: u128 = 1 << 127;
+    let (hi, lo) = GF2m::<P1>::interlace_zeros_lsb_u128(x);
+    // we expect x^(2*127 = 254) to be set
+    assert_eq!(hi, 1u128 << 126);
+    assert_eq!(lo, 0);
+}
+
+#[test]
+fn test_reduce_p1() {
+    let result = P1::reduce_256(1, 0);
+    assert_eq!(result, P1::MOD);
+
+    let result = P1::reduce_256(1, P1::MOD);
+    assert_eq!(result, 0);
+}
+
+#[test]
+fn test_reduce_p2() {
+    let result = P2::reduce_256(1, 0);
+    assert_eq!(result, P2::MOD);
+
+    let result = P2::reduce_256(1, P2::MOD);
+    assert_eq!(result, 0);
 }
