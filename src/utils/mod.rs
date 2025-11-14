@@ -22,8 +22,7 @@ pub fn to_number(value: BigInt) -> Value {
 }
 
 
-/// Divmod method supporting 128 bit polynoms in AES-GCM notation!
-/// Due to the changed order, the the reduction is a left-shift
+/// Divmod method supporting 128 bit polynoms with x^0 = LSB!
 pub fn divmod(dividend: u128, divisor: u128) -> Result<(u128, u128)> {
     if divisor == 0 {
         return Err(anyhow!("Divmod: division by zero!"))

@@ -105,19 +105,80 @@ impl <M: ReducePoly> GF2m<M> {
         Self { value: 1u128, _m: Default::default() }
     }
 
+    // using pclmulqdq from Intel CPU features: Algorithm 2 from
+    // "Intel Carry-Less Multiplication Instruction and its Usage for Computing the GCM Mode" (p. 13)
+    #[target_feature(enable = "pclmulqdq")]
+    fn gf128_mul_pclmul(a: u128, b: u128) -> u128 {
+        use core::arch::x86_64::*;
+
+        // split into 64-bit halves
+        let a1 = (a >> 64) as u64;
+        let a2 = a as u64;
+        let b1 = (b >> 64) as u64;
+        let b2 = b as u64;
+
+        unsafe fn clmul_64(x: u64, y: u64) -> (u64, u64) {
+            unsafe {
+                let vx = _mm_set_epi64x(0, x as i64);
+                let vy = _mm_set_epi64x(0, y as i64);
+                let r = _mm_clmulepi64_si128(vx, vy, 0x00);
+                let mut tmp = [0u64; 2];
+                _mm_storeu_si128(tmp.as_mut_ptr() as *mut __m128i, r);
+                (tmp[1], tmp[0]) 
+            }
+        }
+
+        unsafe {
+            let (c1, c0) = clmul_64(a1,       b1);
+            let (d1, d0) = clmul_64(a2,       b2);
+            let (e1, e0) = clmul_64(a1 ^ a2, b1 ^ b2);
+
+            let hi = (c1 as u128) << 64 | (c0 ^ c1 ^ d1 ^ e1) as u128;
+            let lo = (((d1 ^ c0 ^ d0 ^ e0) as u128) << 64) | d0 as u128;
+
+            M::reduce_256(hi, lo)
+        }
+    }
+
+    fn gf128_mul_fallback(a: u128, b: u128) -> u128 {
+        // fallback to existing mul
+        mul_u128(a, b, M::MOD, M::DEG)
+    }
+
+    pub fn gf128_mul_fast(a: u128, b: u128) -> u128 {
+        #[cfg(all(target_arch = "x86_64"))]
+        {
+            if std::is_x86_feature_detected!("pclmulqdq") {
+                // double checked feature flag, expected to work safely
+                unsafe { Self::gf128_mul_pclmul(a, b) }
+            } else {
+                Self::gf128_mul_fallback(a, b)
+            }
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            // non-x86: always use fallback (or aarch64 PMULL path)
+            gf128_mul_fallback(a, b)
+        }
+    }
+
     pub fn mul(self, rhs: Self) -> Self {
-        let result = mul_u128(self.value, rhs.value, M::MOD, M::DEG);
+        //let result = mul_u128(self.value, rhs.value, M::MOD, M::DEG);
+        let result = Self::gf128_mul_fast(self.value, rhs.value);
         Self { value: result, _m: Default::default() }
     }
 
     /// mul_assign with pointer-rhs, can be used for both (rhs being pointer and GF2m directly)
     pub fn inner_mul_assign(&mut self, rhs: &Self) {
-        let result = mul_u128(self.value, rhs.value, M::MOD, M::DEG);
+        //let result = mul_u128(self.value, rhs.value, M::MOD, M::DEG);
+        let result = Self::gf128_mul_fast(self.value, rhs.value);
         self.value = result;
     }
 
     pub fn mul_borrowed(lhs: &Self, rhs: &Self) -> Self {
-        let result = mul_u128(lhs.value, rhs.value, M::MOD, M::DEG);
+        //let result = mul_u128(lhs.value, rhs.value, M::MOD, M::DEG);
+        let result = Self::gf128_mul_fast(lhs.value, rhs.value);
         return Self { value: result, _m: Default::default() }
     }
 
