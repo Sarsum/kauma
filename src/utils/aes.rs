@@ -13,24 +13,20 @@ pub struct AesGcmResult<M: ReducePoly> {
 pub fn gcm_encrypt<M: ReducePoly>(nonce: &[u8; 12], key: &[u8; 16], plaintext: Vec<u8>, ad: Vec<u8>) -> Result<AesGcmResult<M>> {
     let mut encrypter = Crypter::new(Cipher::aes_128_ecb(), Mode::Encrypt, key, None).map_err(|err| anyhow!(err.to_string()))?;
     encrypter.pad(false);
-    let mut encrypter_buffer = [0u8; 32];
-
-    // Generate Auth Key H once
-    let auth_key_result = encrypter.update(&vec![0u8; 16], &mut encrypter_buffer)
-        .map_err(|err| anyhow!(err.to_string()))?;
-    if auth_key_result != 16 {
-        return Err(anyhow!("Auth Key operation did not encrypt 16 bytes"));
-    }
-
-    let auth_key_gf = GF2m::<M>::from_be_bytes(get_16_bytes(&encrypter_buffer[..16])?);
-
-    // Create keystream including H, passing slice with H to subfunctions
+    
+    // Create keystream including the Nonce and H to reduce OpenSSL overhead
+    // passing slice with H to subfunctions
     let plain_len = plaintext.len();
     // division is floored, therefore we get the correct (floored) result if last block contains less than 16 bytes
     let keystream_blocks = (plain_len + 15) / 16;
     // start counter at 2; one block more because we want H
-    let keystream = generate_keystream(&mut encrypter, nonce, 1, keystream_blocks + 1)?;
+    let nonce_key_stream = generate_keystream(&mut encrypter, nonce, 1, keystream_blocks + 1)?;
+    
+    // Get Auth Key H from the beginning of the keystream
+    let auth_key_gf = GF2m::<M>::from_be_bytes(get_16_bytes(&nonce_key_stream[..16])?);
 
+    // first 16 bytes was the auth-key of encrypted 0-blocks
+    let keystream = &nonce_key_stream[16..];
     let auth_tag_xor = GF2m::<M>::from_be_bytes(get_16_bytes(&keystream[0..16])?);
 
     let mut auth_tag = GF2m::<M>::zero();
@@ -73,13 +69,9 @@ fn ghash_bytes<M: ReducePoly>(auth_tag: &mut GF2m<M>, h: &GF2m<M>, data: &[u8]) 
 }
 
 fn generate_keystream(crypter: &mut Crypter, nonce: &[u8; 12], counter_start: u32, block_count: usize) -> Result<Vec<u8>> {
-    let mut input_block = [0u8; 16];
-    // nonce is always the same
-    input_block[..12].copy_from_slice(nonce);
-
-    let mut buffer = vec![0u8; block_count * 16];
+    let mut buffer = vec![0u8; (block_count+1) * 16];
     let mut ctr = counter_start;
-    for i in 0..block_count {
+    for i in 1..block_count+1 {
         // nonce always at beginning of block
         buffer[i*16 .. i*16 + 12].copy_from_slice(nonce);
         buffer[i*16+12 .. i*16 + 16].copy_from_slice(&ctr.to_be_bytes());
