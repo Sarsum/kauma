@@ -35,6 +35,19 @@ pub enum ActionPoly { P1, P2 }
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ActionGfPoly(pub Vec<ActionGfU128>);
 
+#[derive(Debug, Deserialize)]
+pub struct ActionGcmCrackMessage {
+    ciphertext: ActionBytes,
+    associated_data: ActionBytes,
+    tag: ActionBytes
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ActionGcmCrackForgery {
+    ciphertext: ActionBytes,
+    associated_data: ActionBytes
+}
+
 #[derive(Deserialize, Debug)]
 // tag=action maps the enum name to the action field of the json
 // content=arguments pulls the enum values from the actions' arguments
@@ -162,6 +175,14 @@ pub enum Action {
         f: ActionGfPoly,
         d: u32,
         poly: ActionPoly
+    },
+    GcmCrack {
+        nonce: ActionBytes,
+        m1: ActionGcmCrackMessage,
+        m2: ActionGcmCrackMessage,
+        m3: ActionGcmCrackMessage,
+        forgery: ActionGcmCrackForgery,
+        poly: ActionPoly
     }
 }
 
@@ -199,7 +220,9 @@ pub fn run_action(action: Action) -> Result<Value> {
         Action::GfpolySqrt { s, poly } => gfpoly_actions::run_gfpoly_sqrt(s, poly),
         Action::GfpolyFactorSff { f, poly } => gfpoly_actions::run_gfpoly_sff(f, poly),
         Action::GfpolyFactorDdf { f, poly } => gfpoly_actions::run_gfpoly_ddf(f, poly),
-        Action::GfpolyFactorEdf { f, d, poly } => gfpoly_actions::run_gfpoly_edf(f, d as u128, poly)
+        Action::GfpolyFactorEdf { f, d, poly } => gfpoly_actions::run_gfpoly_edf(f, d as u128, poly),
+        Action::GcmCrack { nonce, m1, m2, m3, forgery, poly }
+            => gcm_actions::run_gcm_crack(nonce.0, m1, m2, m3, forgery, poly)
     }
 }
 

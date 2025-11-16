@@ -93,6 +93,10 @@ impl <M: ReducePoly> GF2m<M> {
         Self { value: value, _m: Default::default() }
     }
 
+    pub fn from_be_bytes(value: [u8; 16]) -> Self {
+        Self { value: u128::from_be_bytes(value).reverse_bits(), _m: Default::default() }
+    }
+
     pub fn zero() -> Self {
         Self { value: 0u128, _m: Default::default() }
     }
@@ -336,6 +340,12 @@ impl<M: ReducePoly> Div for GF2m<M> {
 impl<M: ReducePoly> AddAssign for GF2m<M> {
     fn add_assign(&mut self, rhs: Self) {
         self.add_assign(rhs);
+    }
+}
+
+impl<M: ReducePoly> AddAssign<&GF2m<M>> for GF2m<M> {
+    fn add_assign(&mut self, rhs: &GF2m<M>) {
+        self.value ^= rhs.value;
     }
 }
 

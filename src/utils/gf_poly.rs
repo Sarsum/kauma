@@ -1,4 +1,4 @@
-use std::{cmp::{Ordering, max}, ops::{Add, Div, Mul, MulAssign}};
+use std::{cmp::{Ordering, max}, ops::{Add, AddAssign, Div, Mul, MulAssign}};
 
 use anyhow::{Result, anyhow};
 use num::{BigInt, One, Zero};
@@ -186,6 +186,13 @@ impl<M: ReducePoly> Add for GF2mPoly<M> {
 
     fn add(self, rhs: Self) -> Self::Output {
         self.add_borrowed(&rhs)
+    }
+}
+
+impl<M: ReducePoly> AddAssign for GF2mPoly<M> {
+    fn add_assign(&mut self, rhs: Self) {
+        let result = self.add_borrowed(&rhs);
+        self.elems = result.elems;
     }
 }
 
