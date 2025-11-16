@@ -15,8 +15,8 @@ fn action_gcm_encrypt<M: ReducePoly>(nonce_raw: Vec<u8>, key_raw: Vec<u8>, plain
     let nonce = nonce_raw[..12].try_into().map_err(|_| anyhow!("nonce must be 12 byte"))?;
     let key = key_raw[..16].try_into().map_err(|_| anyhow!("key must be 16 bytes"))?;
     let result = gcm_encrypt::<M>(nonce, key, plaintext, ad)?;
-    Ok(json!({"ciphertext": BASE64_STANDARD.encode(result.ciphertext), "tag": BASE64_STANDARD.encode(result.tag),
-        "L": BASE64_STANDARD.encode(result.l), "H": BASE64_STANDARD.encode(result.h)}))
+    Ok(json!({"ciphertext": BASE64_STANDARD.encode(result.ciphertext), "tag": result.tag,
+        "L": BASE64_STANDARD.encode(result.l), "H": result.h}))
 }
 
 pub fn run_gcm_crack(nonce: Vec<u8>, m1: ActionGcmCrackMessage, m2: ActionGcmCrackMessage, m3: ActionGcmCrackMessage,
