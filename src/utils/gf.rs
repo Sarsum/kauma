@@ -11,12 +11,6 @@ pub struct GF2m<M: ReducePoly> {
     _m: core::marker::PhantomData<M>, // need PhantomData for typing as M is not used in the struct otherwise but required for the GF reduction
 }
 
-impl<M: ReducePoly> Clone for GF2m<M> {
-    fn clone(&self) -> Self {
-        Self::new(self.value)
-    }
-}
-
 /// Trait used for the different reduction polynoms P1 and P2
 /// This way, the implementation can be shared through typing
 /// Due to the trait being named Modulus before, it is being referenced as "M: ReducePoly"
@@ -302,6 +296,12 @@ fn mul_u128(mut lhs: u128, mut rhs: u128, poly: u128, degree: u32) -> u128 {
     z
 }
 
+impl<M: ReducePoly> Clone for GF2m<M> {
+    fn clone(&self) -> Self {
+        Self::new(self.value)
+    }
+}
+
 /// Implementation for var1 * var2 notation for multiplication of GF elements
 impl<M: ReducePoly> Mul for GF2m<M> {
     type Output = Self;
@@ -320,7 +320,7 @@ impl<M: ReducePoly> Add for GF2m<M> {
     }
 }
 
-impl<'lhs, 'rhs, M: ReducePoly> Add<&'rhs GF2m<M>> for &'lhs GF2m<M> {
+impl<M: ReducePoly> Add<&GF2m<M>> for &GF2m<M> {
     type Output = GF2m<M>;
 
     fn add(self, rhs: &GF2m<M>) -> Self::Output {
@@ -349,10 +349,10 @@ impl<M: ReducePoly> AddAssign<&GF2m<M>> for GF2m<M> {
     }
 }
 
-impl<'lhs, 'rhs, M: ReducePoly> Mul<&'rhs GF2m<M>> for &'lhs GF2m<M> {
+impl<M: ReducePoly> Mul<&GF2m<M>> for &GF2m<M> {
     type Output = GF2m<M>;
 
-    fn mul(self, rhs: &'rhs GF2m<M>) -> Self::Output {
+    fn mul(self, rhs: &GF2m<M>) -> Self::Output {
         GF2m::<M>::mul_borrowed(self, rhs)
     }
 }
@@ -371,18 +371,9 @@ impl<M:ReducePoly> MulAssign<GF2m<M>> for GF2m<M> {
 }
 
 /// MullAssign for rhs-pointer (used in loops, when we need rhs multiple times)
-impl<'lhs, 'rhs, M: ReducePoly> MulAssign<&'rhs GF2m<M>> for GF2m<M> {
-    fn mul_assign(&mut self, rhs: &'rhs GF2m<M>) {
+impl<M: ReducePoly> MulAssign<&GF2m<M>> for GF2m<M> {
+    fn mul_assign(&mut self, rhs: &GF2m<M>) {
         self.inner_mul_assign(rhs);
-    }
-}
-
-impl<M: ReducePoly> Serialize for GF2m<M> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
-        let b64 = BASE64_STANDARD.encode(self.value.reverse_bits().to_be_bytes());
-        serializer.serialize_str(&b64)
     }
 }
 
@@ -402,10 +393,18 @@ impl<M: ReducePoly> Ord for GF2m<M> {
     }
 }
 
-
 impl<M: ReducePoly> PartialOrd for GF2m<M> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl<M: ReducePoly> Serialize for GF2m<M> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer {
+        let b64 = BASE64_STANDARD.encode(self.value.reverse_bits().to_be_bytes());
+        serializer.serialize_str(&b64)
     }
 }
 

@@ -12,40 +12,44 @@ mod gf_actions;
 mod gcm_actions;
 mod gfpoly_actions;
 
-#[derive(Debug)]
-/// Type used when parsing the actions into the action enum
-/// Required as the numbers can either be integers or hex-strings
-pub struct ActionNumber(BigInt);
-
-#[derive(Debug)]
-// Type to map the base64-encoded bytes of unkown length 
-pub struct ActionBytes(Vec<u8>);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-// Special type for the GF actions including AES-GCM polynoms in BE
-pub struct ActionGfU128(pub u128);
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all="snake_case")]
-/// Additional type for the two polynom versions due to a ton of required deserialization methods to automatically map the polynom
-/// This is due to the different variable names in the different action types
-/// Enum can be matched inside the action and the desired typed GF element created 
-pub enum ActionPoly { P1, P2 }
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ActionGfPoly(pub Vec<ActionGfU128>);
-
-#[derive(Debug, Deserialize)]
-pub struct ActionGcmCrackMessage {
-    ciphertext: ActionBytes,
-    associated_data: ActionBytes,
-    tag: ActionBytes
+pub fn run_action(action: Action) -> Result<Value> {
+    match action {
+        Action::Calc { lhs, op, rhs } => calc::run_action(lhs, op, rhs),
+        Action::PaddingOracle { hostname, port, key_id, iv, ciphertext }
+            => padding_oracle::run_action(hostname, port.0, key_id.0, iv.0, ciphertext.0),
+        Action::GfMul { a, b, poly } => gf_actions::run_gf_mul(a.0, b.0, poly),
+        Action::GfPow { b, e, poly } => gf_actions::run_gf_pow(b.0, e.0, poly),
+        Action::GfInv { x, poly } => gf_actions::run_gf_inv(x.0, poly),
+        Action::GfDiv { a, b, poly } => gf_actions::run_gf_div(a.0, b.0, poly),
+        Action::GfSqrt { x, poly } => gf_actions::run_gf_sqrt(x.0, poly),
+        Action::GfDivmod { a, b } => gf_actions::run_gf_divmod(a.0, b.0),
+        Action::GcmEncrypt { poly, nonce, key, plaintext, ad }
+            => gcm_actions::run_gcm_encrypt(poly, nonce.0, key.0, plaintext.0, ad.0),
+        Action::GfpolySort { polys } => gfpoly_actions::run_gfpoly_sort(polys),
+        Action::GfpolyAdd { a, b, poly } => gfpoly_actions::run_gfpoly_add(a, b, poly),
+        Action::GfpolyMul { a, b, poly } => gfpoly_actions::run_gfpoly_mul(a, b, poly),
+        Action::GfpolyMonic { a, poly } => gfpoly_actions::run_gfpoly_monic(a, poly),
+        Action::GfpolyDivmod { a, b, poly } => gfpoly_actions::run_gfpoly_divmod(a, b, poly),
+        Action::GfpolyGcd { a, b, poly } => gfpoly_actions::run_gfpoly_gcd(a, b, poly),
+        Action::GfpolyPow { b, e, poly } => gfpoly_actions::run_gfpoly_pow(b, e, poly),
+        Action::GfpolyPowmod { b, e, m, poly } => gfpoly_actions::run_gfpoly_powmod(b, e.0, m, poly),
+        Action::GfpolyDiff { f, poly } => gfpoly_actions::run_gfpoly_diff(f, poly),
+        Action::GfpolySqrt { s, poly } => gfpoly_actions::run_gfpoly_sqrt(s, poly),
+        Action::GfpolyFactorSff { f, poly } => gfpoly_actions::run_gfpoly_sff(f, poly),
+        Action::GfpolyFactorDdf { f, poly } => gfpoly_actions::run_gfpoly_ddf(f, poly),
+        Action::GfpolyFactorEdf { f, d, poly } => gfpoly_actions::run_gfpoly_edf(f, d as u128, poly),
+        Action::GcmCrack { nonce, m1, m2, m3, forgery, poly }
+            => gcm_actions::run_gcm_crack(nonce.0, m1, m2, m3, forgery, poly)
+    }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ActionGcmCrackForgery {
-    ciphertext: ActionBytes,
-    associated_data: ActionBytes
+// I might write a proper deserializer at a later point
+// for the moment, this is sufficient to handle unknown action types
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub enum TryAction {
+    Ok(Action),
+    Err(Value),
 }
 
 #[derive(Deserialize, Debug)]
@@ -186,44 +190,40 @@ pub enum Action {
     }
 }
 
-// I might write a proper deserializer at a later point
-// for the moment, this is sufficient to handle unknown action types
-#[derive(Deserialize, Debug)]
-#[serde(untagged)]
-pub enum TryAction {
-    Ok(Action),
-    Err(Value),
+#[derive(Debug)]
+/// Type used when parsing the actions into the action enum
+/// Required as the numbers can either be integers or hex-strings
+pub struct ActionNumber(BigInt);
+
+#[derive(Debug)]
+// Type to map the base64-encoded bytes of unkown length 
+pub struct ActionBytes(Vec<u8>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+// Special type for the GF actions including AES-GCM polynoms in BE
+pub struct ActionGfU128(pub u128);
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all="snake_case")]
+/// Additional type for the two polynom versions due to a ton of required deserialization methods to automatically map the polynom
+/// This is due to the different variable names in the different action types
+/// Enum can be matched inside the action and the desired typed GF element created 
+pub enum ActionPoly { P1, P2 }
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ActionGfPoly(pub Vec<ActionGfU128>);
+
+#[derive(Debug, Deserialize)]
+pub struct ActionGcmCrackMessage {
+    ciphertext: ActionBytes,
+    associated_data: ActionBytes,
+    tag: ActionBytes
 }
 
-pub fn run_action(action: Action) -> Result<Value> {
-    match action {
-        Action::Calc { lhs, op, rhs } => calc::run_action(lhs, op, rhs),
-        Action::PaddingOracle { hostname, port, key_id, iv, ciphertext }
-            => padding_oracle::run_action(hostname, port.0, key_id.0, iv.0, ciphertext.0),
-        Action::GfMul { a, b, poly } => gf_actions::run_gf_mul(a.0, b.0, poly),
-        Action::GfPow { b, e, poly } => gf_actions::run_gf_pow(b.0, e.0, poly),
-        Action::GfInv { x, poly } => gf_actions::run_gf_inv(x.0, poly),
-        Action::GfDiv { a, b, poly } => gf_actions::run_gf_div(a.0, b.0, poly),
-        Action::GfSqrt { x, poly } => gf_actions::run_gf_sqrt(x.0, poly),
-        Action::GfDivmod { a, b } => gf_actions::run_gf_divmod(a.0, b.0),
-        Action::GcmEncrypt { poly, nonce, key, plaintext, ad }
-            => gcm_actions::run_gcm_encrypt(poly, nonce.0, key.0, plaintext.0, ad.0),
-        Action::GfpolySort { polys } => gfpoly_actions::run_gfpoly_sort(polys),
-        Action::GfpolyAdd { a, b, poly } => gfpoly_actions::run_gfpoly_add(a, b, poly),
-        Action::GfpolyMul { a, b, poly } => gfpoly_actions::run_gfpoly_mul(a, b, poly),
-        Action::GfpolyMonic { a, poly } => gfpoly_actions::run_gfpoly_monic(a, poly),
-        Action::GfpolyDivmod { a, b, poly } => gfpoly_actions::run_gfpoly_divmod(a, b, poly),
-        Action::GfpolyGcd { a, b, poly } => gfpoly_actions::run_gfpoly_gcd(a, b, poly),
-        Action::GfpolyPow { b, e, poly } => gfpoly_actions::run_gfpoly_pow(b, e, poly),
-        Action::GfpolyPowmod { b, e, m, poly } => gfpoly_actions::run_gfpoly_powmod(b, e.0, m, poly),
-        Action::GfpolyDiff { f, poly } => gfpoly_actions::run_gfpoly_diff(f, poly),
-        Action::GfpolySqrt { s, poly } => gfpoly_actions::run_gfpoly_sqrt(s, poly),
-        Action::GfpolyFactorSff { f, poly } => gfpoly_actions::run_gfpoly_sff(f, poly),
-        Action::GfpolyFactorDdf { f, poly } => gfpoly_actions::run_gfpoly_ddf(f, poly),
-        Action::GfpolyFactorEdf { f, d, poly } => gfpoly_actions::run_gfpoly_edf(f, d as u128, poly),
-        Action::GcmCrack { nonce, m1, m2, m3, forgery, poly }
-            => gcm_actions::run_gcm_crack(nonce.0, m1, m2, m3, forgery, poly)
-    }
+#[derive(Debug, Deserialize)]
+pub struct ActionGcmCrackForgery {
+    ciphertext: ActionBytes,
+    associated_data: ActionBytes
 }
 
 impl<'de> Deserialize<'de> for ActionNumber {

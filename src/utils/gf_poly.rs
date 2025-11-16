@@ -181,62 +181,6 @@ impl<M: ReducePoly> GF2mPoly<M> {
     }
 }
 
-impl<M: ReducePoly> Add for GF2mPoly<M> {
-    type Output = GF2mPoly<M>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        self.add_borrowed(&rhs)
-    }
-}
-
-impl<M: ReducePoly> AddAssign for GF2mPoly<M> {
-    fn add_assign(&mut self, rhs: Self) {
-        let result = self.add_borrowed(&rhs);
-        self.elems = result.elems;
-    }
-}
-
-impl<M: ReducePoly> Mul for GF2mPoly<M> {
-    type Output = GF2mPoly<M>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        self.mul_borrowed(&rhs)
-    }
-}
-
-impl<M: ReducePoly> Mul<&GF2mPoly<M>> for &GF2mPoly<M> {
-    type Output = GF2mPoly<M>;
-
-    fn mul(self, rhs: &GF2mPoly<M>) -> Self::Output {
-        self.mul_borrowed(rhs)
-    }
-}
-
-impl<M: ReducePoly> MulAssign<&GF2mPoly<M>> for GF2mPoly<M> {
-    fn mul_assign(&mut self, rhs: &GF2mPoly<M>) {
-        let res = self.mul_borrowed(rhs);
-        self.elems = res.elems;
-    }
-}
-
-impl<M: ReducePoly> Clone for GF2mPoly<M> {
-    fn clone(&self) -> Self {
-        Self { elems: self.elems.clone() }
-    }
-}
-
-impl<M: ReducePoly> Serialize for GF2mPoly<M> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
-        let mut seq = serializer.serialize_seq(Some(self.elems.len()))?;
-        for e in &self.elems {
-            seq.serialize_element(e)?;
-        }
-        seq.end()
-    }
-}
-
 pub fn divmod<M: ReducePoly>(lhs: &GF2mPoly<M>, rhs: &GF2mPoly<M>) -> (GF2mPoly<M>, GF2mPoly<M>) {
     let mut remainder = lhs.clone();
     let mut quotient = GF2mPoly::<M>::zero();
@@ -259,40 +203,6 @@ pub fn divmod<M: ReducePoly>(lhs: &GF2mPoly<M>, rhs: &GF2mPoly<M>) -> (GF2mPoly<
         }
     }
     (quotient, remainder)
-}
-
-impl<M: ReducePoly> Div<&GF2mPoly<M>> for &GF2mPoly<M> {
-    type Output = Result<GF2mPoly<M>>;
-
-    fn div(self, rhs: &GF2mPoly<M>) -> Self::Output {
-        let (q, r) = divmod(self, rhs);
-        if r != GF2mPoly::<M>::zero() {
-            return Err(anyhow!("GFPoly division divmod did not return rest zero"))
-        }
-        Ok(q)
-    }
-}
-
-impl<M: ReducePoly> PartialEq for GF2mPoly<M> {
-    fn eq(&self, other: &Self) -> bool {
-        self.elems == other.elems
-    }
-}
-
-impl<M: ReducePoly> Eq for GF2mPoly<M> {}
-
-impl<M: ReducePoly> PartialOrd for GF2mPoly<M> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<M: ReducePoly> Ord for GF2mPoly<M> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // first, compare Poly degree only
-        self.elems.len().cmp(&other.elems.len())
-            .then_with(|| self.elems.iter().rev().cmp(other.elems.iter().rev()))
-    }
 }
 
 pub fn gcd<M: ReducePoly>(a: &GF2mPoly<M>, b: &GF2mPoly<M>) -> GF2mPoly<M> {
@@ -448,4 +358,94 @@ pub fn edf<M: ReducePoly>(f: GF2mPoly<M>, d: u128) -> Result<Vec<GF2mPoly<M>>> {
 
     z.sort();
     Ok(z)
+}
+
+impl<M: ReducePoly> Add for GF2mPoly<M> {
+    type Output = GF2mPoly<M>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.add_borrowed(&rhs)
+    }
+}
+
+impl<M: ReducePoly> AddAssign for GF2mPoly<M> {
+    fn add_assign(&mut self, rhs: Self) {
+        let result = self.add_borrowed(&rhs);
+        self.elems = result.elems;
+    }
+}
+
+impl<M: ReducePoly> Mul for GF2mPoly<M> {
+    type Output = GF2mPoly<M>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.mul_borrowed(&rhs)
+    }
+}
+
+impl<M: ReducePoly> MulAssign<&GF2mPoly<M>> for GF2mPoly<M> {
+    fn mul_assign(&mut self, rhs: &GF2mPoly<M>) {
+        let res = self.mul_borrowed(rhs);
+        self.elems = res.elems;
+    }
+}
+
+impl<M: ReducePoly> Mul<&GF2mPoly<M>> for &GF2mPoly<M> {
+    type Output = GF2mPoly<M>;
+
+    fn mul(self, rhs: &GF2mPoly<M>) -> Self::Output {
+        self.mul_borrowed(rhs)
+    }
+}
+
+impl<M: ReducePoly> Div<&GF2mPoly<M>> for &GF2mPoly<M> {
+    type Output = Result<GF2mPoly<M>>;
+
+    fn div(self, rhs: &GF2mPoly<M>) -> Self::Output {
+        let (q, r) = divmod(self, rhs);
+        if r != GF2mPoly::<M>::zero() {
+            return Err(anyhow!("GFPoly division divmod did not return rest zero"))
+        }
+        Ok(q)
+    }
+}
+
+impl<M: ReducePoly> Clone for GF2mPoly<M> {
+    fn clone(&self) -> Self {
+        Self { elems: self.elems.clone() }
+    }
+}
+
+impl<M: ReducePoly> PartialEq for GF2mPoly<M> {
+    fn eq(&self, other: &Self) -> bool {
+        self.elems == other.elems
+    }
+}
+
+impl<M: ReducePoly> Eq for GF2mPoly<M> {}
+
+impl<M: ReducePoly> PartialOrd for GF2mPoly<M> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<M: ReducePoly> Ord for GF2mPoly<M> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // first, compare Poly degree only
+        self.elems.len().cmp(&other.elems.len())
+            .then_with(|| self.elems.iter().rev().cmp(other.elems.iter().rev()))
+    }
+}
+
+impl<M: ReducePoly> Serialize for GF2mPoly<M> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer {
+        let mut seq = serializer.serialize_seq(Some(self.elems.len()))?;
+        for e in &self.elems {
+            seq.serialize_element(e)?;
+        }
+        seq.end()
+    }
 }
