@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::usize;
 
 use anyhow::{Ok, Result, anyhow};
@@ -7,70 +8,63 @@ use base64::prelude::BASE64_STANDARD;
 use num::BigInt;
 use num::traits::ToPrimitive;
 use serde_json::{Value, json};
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::task::{JoinSet};
 
 struct PaddingOracleClient {
     stream: TcpStream,
 }
 
 impl PaddingOracleClient {
-    async fn new(hostname: &str, port: u16, key_id: u16, ciphertext: &[u8]) -> Result<Self> {
-        let mut connection = PaddingOracleClient::connect(hostname, port).await?;
+    fn new(hostname: &str, port: u16, key_id: u16, ciphertext: &[u8]) -> Result<Self> {
+        let mut connection = PaddingOracleClient::connect(hostname, port)?;
         connection.stream.set_nodelay(true)?;
         // Write key id and ciphertext, propagate potential error
-        PaddingOracleClient::write_bytes(&mut connection.stream, &key_id.to_le_bytes(), false).await?;
-        PaddingOracleClient::write_bytes(&mut connection.stream, ciphertext, true).await?;
+        PaddingOracleClient::write_bytes(&mut connection.stream, &key_id.to_le_bytes(), false)?;
+        PaddingOracleClient::write_bytes(&mut connection.stream, ciphertext, true)?;
         Ok(connection)
     }
 
-    async fn connect(hostname: &str, port: u16) -> Result<Self> {
-        let stream = TcpStream::connect((hostname, port)).await
+    fn connect(hostname: &str, port: u16) -> Result<Self> {
+        let stream = TcpStream::connect((hostname, port))
             .map_err(|e| anyhow!("Error establishing tcp connection: {}", e))?;
         Ok(Self {stream: stream})
     }
 
-    async fn write_bytes(stream: &mut TcpStream , data: &[u8], force_flush: bool) -> Result<()> {
+    fn write_bytes(stream: &mut TcpStream , data: &[u8], force_flush: bool) -> Result<()> {
         let mut written = 0 as usize;
         while written < data.len() {
-            let temp = stream.write(&data[written..]).await.map_err(|e| anyhow!("Error writing data to tcp stream: {}", e))?;
+            let temp = stream.write(&data[written..]).map_err(|e| anyhow!("Error writing data to tcp stream: {}", e))?;
             written += temp;
         }
         if force_flush {
-            return stream.flush().await.map_err(|e| anyhow!("Error flushing tcp stream write {}", e))
+            return stream.flush().map_err(|e| anyhow!("Error flushing tcp stream write {}", e))
         }
         Ok(())
     }
 
-    async fn rec_bytes(stream: &mut TcpStream, byte_count: usize) -> Result<Vec<u8>> {
+    fn rec_bytes(stream: &mut TcpStream, byte_count: usize) -> Result<Vec<u8>> {
         let mut buf = vec![0xFFu8; byte_count];
-        let read = stream.read_exact(&mut buf).await?;
+        let read = stream.read(&mut buf[..])?;
         if read != byte_count {
             return Err(anyhow!("Got {} bytes but expected {}", read, byte_count))
         }
         Ok(buf)
     }
 
-    async fn test_blocks(stream: &mut TcpStream, count: usize, blocks: &[u8]) -> Result<Vec<u8>> {
+    fn test_blocks(stream: &mut TcpStream, count: usize, blocks: &[u8]) -> Result<Vec<u8>> {
         // Write count of ciphertext blocks
-        Self::write_bytes(stream, &(count as u16).to_le_bytes(), false).await?;
+        Self::write_bytes(stream, &(count as u16).to_le_bytes(), false)?;
         // Write ciphertext blocks
-        Self::write_bytes(stream, blocks, true).await?;
-        return Self::rec_bytes(stream, count).await;
+        Self::write_bytes(stream, blocks, true)?;
+        return Self::rec_bytes(stream, count);
     }
 
-    async fn fin(mut stream: TcpStream) -> Result<()> {
-        Self::write_bytes(&mut stream, &vec![0 as u8; 2], true).await?;
-        return stream.shutdown().await.map_err(|e| anyhow!("Error closing connection: {}", e));
+    fn fin(mut stream: TcpStream) -> Result<()> {
+        Self::write_bytes(&mut stream, &vec![0 as u8; 2], true)?;
+        return stream.shutdown(std::net::Shutdown::Both).map_err(|e| anyhow!("Error closing connection: {}", e));
     }
 }
 
 pub fn run_action(hostname: String, port: BigInt, key_id: BigInt, iv: Vec<u8>, ciphertext: Vec<u8>) -> Result<Value> {
-    tokio::runtime::Runtime::new()?.block_on(run_action_async(hostname, port, key_id, iv, ciphertext))
-}
-
-async fn run_action_async(hostname: String, port: BigInt, key_id: BigInt, iv: Vec<u8>, ciphertext: Vec<u8>) -> Result<Value> {
     if iv.len() != 16 {
         return Err(anyhow!("Padding Oracle IV is not 16 bytes!"))
     }
@@ -80,95 +74,68 @@ async fn run_action_async(hostname: String, port: BigInt, key_id: BigInt, iv: Ve
     }
 
     let block_count = ciph_len/16;
-    let port = port.to_u16().ok_or(anyhow!("Could not convert port to u16!"))?;
-    let key_id = key_id.to_u16().ok_or(anyhow!("Could not convert key_id to u16!"))?;
-
-    // Arc lets us share immutable memory across multiple threads
-    let iv = Arc::new(iv);
-    let ciphertext = Arc::new(ciphertext);
-
-
-    let mut tasks = JoinSet::new();
+    let mut cleartext: Vec<u8> = vec!(0; ciph_len);
 
     // Go through ciphertext blocks from start to end
-    // append thread to tasks vec to collect them all once finished
     for block_num in 0..block_count {
-        // need to clone outside of async block, otherwise value gets moved
-        let host = hostname.clone();
-        let iv_clone = iv.clone();
-        let ciph_clone = ciphertext.clone();
-        tasks.spawn(async move {
-            attack_block(host, port, key_id, iv_clone, ciph_clone, block_count, block_num).await
-        });
-    }
+        let block_start = (block_count-1-block_num)*16;
+        let block = &ciphertext[block_start..block_start+16];
+        let mut client = PaddingOracleClient::new(&hostname,
+            port.to_u16().ok_or(anyhow!("Could not convert port to u16!"))?,
+            key_id.to_u16().ok_or(anyhow!("Could not convert key_id to u16!"))?, block)?;
 
-    let mut cleartext: Vec<u8> = vec!(0; ciph_len);
-    while let Some(res) = tasks.join_next().await {
-        let (block_num, clear_block) = res??;
-        let block_start = (block_count - 1 - block_num)*16;
-        cleartext[block_start..block_start+16].copy_from_slice(&clear_block);
-    }
+        // current_iv is either the previous cipher block or the iv in case of the first cipher block
+        let current_iv = if block_start == 0 {
+            &iv
+        } else if block_start % 16 == 0 {
+            &ciphertext[(block_start-16)..block_start]
+        } else {
+            return Err(anyhow!("Could not get the current iv, because block start does not match l*16"))
+        };
 
-    Ok(json!({"plaintext": BASE64_STANDARD.encode(cleartext)}))
-}
+        let mut padded_blocks = [0 as u8; 16*256];
 
-async fn attack_block(hostname: String, port: u16, key_id: u16, iv: Arc<Vec<u8>>, ciphertext: Arc<Vec<u8>>, block_count: usize, block_num: usize) -> Result<(usize, [u8; 16])> {
-    let block_start = (block_count-1-block_num)*16;
-    let block = &ciphertext[block_start..block_start+16];
-    let mut client = PaddingOracleClient::new(&hostname, port, key_id, block).await?;
+        let mut previous_decrypted = 0;
 
-    // current_iv is either the previous cipher block or the iv in case of the first cipher block
-    let current_iv = if block_start == 0 {
-        &iv
-    } else if block_start % 16 == 0 {
-        &ciphertext[(block_start-16)..block_start]
-    } else {
-        return Err(anyhow!("Could not get the current iv, because block start does not match l*16"))
-    };
+        for i in 0..16 as usize {
+            let end= 15 - i as usize;
+            let padding_size_num = i as u8 + 1;
+            let previus_padding = padding_size_num - 1;
 
-    let mut padded_blocks = [0 as u8; 16*256];
-
-    let mut previous_decrypted = 0;
-    let mut clear_block = [0u8; 16];
-
-    for i in 0..16 as usize {
-        let end= 15 - i as usize;
-        let padding_size_num = i as u8 + 1;
-        let previus_padding = padding_size_num - 1;
-
-        // keeping bytes 0..end as 0 (initial value)
-        // setting end+1 to values of 0x00..0xFF
-        // setting end+2 to values of 0x00..0xFF XOR previous_decrypted byte --> we get the intended padding value
-        // setting end+3..16 to values of old_value XOR padding_size - 1 XOR padding_size --> get intended padding value
-        for b in 0..256 as usize {
-            // cleartext is not known
-            padded_blocks[b*16 + end] = b as u8;
-            // modify bytes where we know the decrypted value to represent current padding
-            for known_byte in 1..i+1 {
-                if known_byte==1 {
-                    padded_blocks[b*16 + end+known_byte] = previous_decrypted ^ padding_size_num
-                } else {
-                    padded_blocks[b*16 + end+known_byte] = padded_blocks[b*16 + end+known_byte] ^ previus_padding ^ padding_size_num;
+            // keeping bytes 0..end as 0 (initial value)
+            // setting end+1 to values of 0x00..0xFF
+            // setting end+2 to values of 0x00..0xFF XOR previous_decrypted byte --> we get the intended padding value
+            // setting end+3..16 to values of old_value XOR padding_size - 1 XOR padding_size --> get intended padding value
+            for b in 0..256 as usize {
+                // cleartext is not known
+                padded_blocks[b*16 + end] = b as u8;
+                // modify bytes where we know the decrypted value to represent current padding
+                for known_byte in 1..i+1 {
+                    if known_byte==1 {
+                        padded_blocks[b*16 + end+known_byte] = previous_decrypted ^ padding_size_num
+                    } else {
+                        padded_blocks[b*16 + end+known_byte] = padded_blocks[b*16 + end+known_byte] ^ previus_padding ^ padding_size_num;
+                    }
                 }
             }
-        }
 
-        // byte num in block
-        let b = 15 - i;
-        let correct_padding = attack_byte(b, &mut client, &mut padded_blocks).await?;
-        previous_decrypted = correct_padding ^ padding_size_num;
-        clear_block[b] = current_iv[b] ^ previous_decrypted;
+            // byte num in block
+            let b = 15 - i;
+            let correct_padding = attack_byte(b, &mut client, &mut padded_blocks)?;
+            previous_decrypted = correct_padding ^ padding_size_num;
+            cleartext[block_start + b] = current_iv[b] ^ previous_decrypted;
+        }
+        PaddingOracleClient::fin(client.stream)?;
     }
-    PaddingOracleClient::fin(client.stream).await?;
-    Ok((block_num, clear_block))
+    Ok(json!({"plaintext": BASE64_STANDARD.encode(cleartext)}))
 }
 
 // method to run the padding attack against byte number: byte_num
 // uses the cleartext_block to calculate values for correct padding of already known bytes
 // on a hit, it verifies the match using a value of 0xFF for the revious byte (to eliminate cases in which something like "02" is the previous plaintext byte)
 // returns the verified byte which results in a correct padding --> needs to be XORed with ciphertext to get plain byte  
-async fn attack_byte(byte_num: usize, client: &mut PaddingOracleClient, padding: &mut [u8]) -> Result<u8> {
-    let result = PaddingOracleClient::test_blocks(&mut client.stream, padding.len() / 16 as usize, &padding).await?;
+fn attack_byte(byte_num: usize, client: &mut PaddingOracleClient, padding: &mut [u8]) -> Result<u8> {
+    let result = PaddingOracleClient::test_blocks(&mut client.stream, padding.len() / 16 as usize, &padding)?;
     if result.len() != 256 as usize {
         return Err(anyhow!("Result is not 256 bytes long: {:x?}", result))
     }
@@ -193,7 +160,7 @@ async fn attack_byte(byte_num: usize, client: &mut PaddingOracleClient, padding:
                 padding[start + byte_num-1] = 0xFF;
                 // we borrow us the previously generated padding pattern and modify it
                 let current_padding = &padding[start..(start + 16)];
-                let result = PaddingOracleClient::test_blocks(&mut client.stream, 1, current_padding).await?;
+                let result = PaddingOracleClient::test_blocks(&mut client.stream, 1, current_padding)?;
                 if result.len() < 1 {
                     return Err(anyhow!("Result is zero where expected 1"));
                 }
