@@ -296,7 +296,10 @@ fn mul_u128(mut lhs: u128, mut rhs: u128, poly: u128, degree: u32) -> u128 {
     z
 }
 
+impl<M: ReducePoly> Copy for GF2m<M> {}
+
 impl<M: ReducePoly> Clone for GF2m<M> {
+    #[inline]
     fn clone(&self) -> Self {
         Self::new(self.value)
     }

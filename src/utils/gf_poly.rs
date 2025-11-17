@@ -122,19 +122,17 @@ impl<M: ReducePoly> GF2mPoly<M> {
     }
 
     pub fn diff(&self) -> Self {
-        if self.degree() == 0 {
+        let n = self.elems.len();
+        // diff of constant is zero
+        if n <= 1 {
             return Self::zero()
         }
         // diff is one degree less
-        let mut diff: Vec<GF2m<M>> = Vec::with_capacity(self.elems.len() - 1);
+        let mut diff: Vec<GF2m<M>> = vec![GF2m::<M>::zero(); n - 1];
         // start at 1, the x^0 will be gone
-        for i in 1..self.elems.len() {
+        for i in (1..n).step_by(2) {
             // we keep only odd exps, as 2*x in GF2m is zero
-            if i % 2 == 1 {
-                diff.push(self.elems[i].clone());
-            } else {
-                diff.push(GF2m::<M>::zero());
-            }
+            diff[i-1] = self.elems[i];
         }
         Self { elems: diff }.trim()
     }
