@@ -20,9 +20,13 @@ impl<M: ReducePoly> GF2mPoly<M> {
         Self { elems: elems }
     }
 
+    pub fn is_monic(&self) -> bool {
+        self.elems.len() > 0 && self.elems[self.elems.len() - 1] == GF2m::<M>::one()
+    }
+
     pub fn make_monic(mut self) -> GF2mPoly<M> {
         // nothing to do
-        if self.elems[self.elems.len() - 1] == GF2m::<M>::one() {
+        if self.is_monic() {
             return self
         }
         let inv = self.elems[self.elems.len() - 1].clone().inv();
@@ -257,8 +261,9 @@ pub struct PolySffFactor<M: ReducePoly> {
 }
 
 pub fn sff<M: ReducePoly>(mut f: GF2mPoly<M>) -> Result<Vec<PolySffFactor<M>>> {
-    // ensure poly is monic
-    f = f.make_monic();
+    if !f.is_monic() {
+        return Err(anyhow!("sff: f needs to be monic!"))
+    }
     // implementation from the slides
     let f_d = f.diff();
     let mut c = gcd(&f, &f_d);
@@ -294,6 +299,9 @@ pub struct PolyDdfFactor<M: ReducePoly> {
 }
 
 pub fn ddf<M: ReducePoly>(f: GF2mPoly<M>) -> Result<Vec<PolyDdfFactor<M>>> {
+    if !f.is_monic() {
+        return Err(anyhow!("ddf: f needs to be monic!"))
+    }
     let q: BigInt = BigInt::one() << 128;
     let mut z: Vec<PolyDdfFactor<M>> = Vec::new();
     let mut d = 1 as u32;
@@ -333,13 +341,16 @@ fn random_poly<M: ReducePoly>(max_len_exl: u128) -> GF2mPoly<M> {
 }
 
 pub fn edf<M: ReducePoly>(f: GF2mPoly<M>, d: u128) -> Result<Vec<GF2mPoly<M>>> {
+    if !f.is_monic() {
+        return Err(anyhow!("edf: f needs to be monic!"))
+    }
     let q: BigInt = BigInt::one() << 128;
     let f_deg = f.degree() as u128;
     let n = f_deg / d;
     let mut z  = vec![f.clone()];
 
     while (z.len() as u128) < n {
-        let h = random_poly::<M>(f_deg);
+        let h = random_poly::<M>(f_deg + 1);
         let g = powmod(h, (q.clone().pow(d as u32) - 1) / 3, &f) + GF2mPoly::<M>::one();
 
         for i in 0..z.len() {
