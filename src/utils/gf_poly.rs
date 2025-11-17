@@ -230,9 +230,9 @@ pub fn gcd<M: ReducePoly>(a: &GF2mPoly<M>, b: &GF2mPoly<M>) -> GF2mPoly<M> {
 pub fn powmod<M: ReducePoly>(base: GF2mPoly<M>, mut exp: BigInt, modulus: &GF2mPoly<M>) -> GF2mPoly<M> {
     // reduce base in case its bigger than modulus
     let (_, mut base_reduced) = divmod(&base, modulus);
-    //eprintln!("base_reduced: {}", json!(base_reduced));
-    //let mut base_reduced = base;
-    let mut result = GF2mPoly::<M>::one();
+    // edgecase: exp == 0, we need to reduce in case mod equals 1
+    // better here than after, because divmod with 1 is easy
+    let (_, mut result) = divmod(&GF2mPoly::<M>::one(), modulus);
 
     // square and mul is ugly due to BigInt for hex numbers
     while &exp > &BigInt::zero() {
