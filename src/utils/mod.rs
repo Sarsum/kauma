@@ -30,21 +30,33 @@ pub fn divmod(dividend: u128, divisor: u128) -> Result<(u128, u128)> {
     if dividend == 0 {
         return Ok((0, 0));
     }
-    // only calculate the degree of the divisor once
+    // only calculate the degree of the divisor and dividend once and subtracting one per loop for dividend
     let degree_divisor = 127 - divisor.leading_zeros();
+    let degree_dividend = 127 - dividend.leading_zeros();
+
+    // cannot divide anything 
+    if degree_dividend < degree_divisor {
+        return Ok((0, dividend))
+    }
+    
     let mut quotient = 0u128;
     let mut remainder = dividend;
 
-    while remainder != 0 {
-        let degree_remainer = 127 - remainder.leading_zeros();
-        if degree_remainer < degree_divisor {
+    let mut shift = degree_dividend - degree_divisor;
+
+    loop {
+        let bit_pos = degree_divisor + shift;
+        
+        if remainder & (1u128 << bit_pos) != 0 {
+            // Add dividend degree to quotient
+            quotient ^= 1u128 << shift;
+            // Eliminate the hightest exponent
+            remainder ^= divisor << shift;
+        }
+        if shift == 0 {
             break;
         }
-        
-        // Add dividend degree to quotient
-        quotient ^= 1u128 << (degree_remainer - degree_divisor);
-        // Eliminate the hightest exponent
-        remainder ^= divisor << (degree_remainer - degree_divisor);
+        shift -= 1;
     }
     Ok((quotient, remainder))
 }
