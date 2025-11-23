@@ -11,6 +11,7 @@ mod padding_oracle;
 mod gf_actions;
 mod gcm_actions;
 mod gfpoly_actions;
+mod rsa_factor;
 
 pub fn run_action(action: Action) -> Result<Value> {
     match action {
@@ -39,7 +40,8 @@ pub fn run_action(action: Action) -> Result<Value> {
         Action::GfpolyFactorDdf { f, poly } => gfpoly_actions::run_gfpoly_ddf(f, poly),
         Action::GfpolyFactorEdf { f, d, poly } => gfpoly_actions::run_gfpoly_edf(f, d as u128, poly),
         Action::GcmCrack { nonce, m1, m2, m3, forgery, poly }
-            => gcm_actions::run_gcm_crack(nonce.0, m1, m2, m3, forgery, poly)
+            => gcm_actions::run_gcm_crack(nonce.0, m1, m2, m3, forgery, poly),
+        Action::RsaFactor { moduli } => rsa_factor::run_action(moduli)
     }
 }
 
@@ -187,6 +189,9 @@ pub enum Action {
         m3: ActionGcmCrackMessage,
         forgery: ActionGcmCrackForgery,
         poly: ActionPoly
+    },
+    RsaFactor {
+        moduli: Vec<ActionNumber>
     }
 }
 
