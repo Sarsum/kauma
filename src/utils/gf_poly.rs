@@ -458,3 +458,89 @@ impl<M: ReducePoly> Serialize for GF2mPoly<M> {
         seq.end()
     }
 }
+
+#[test]
+fn test_gfpoly_monic() {
+    use serde_json::json;
+    use crate::utils::gf::P1;
+    let poly = GF2mPoly::<P1>::new_single_term(GF2m::<P1>::zero(), 0);
+    let monic = poly.clone().make_monic();
+    assert_eq!(json!(poly), json!(monic));
+
+    let poly: ActionGfPoly = serde_json::from_str(r#"
+        [
+            "AAAAAAAAAAAAAAAAAAAAAA==",
+            "QAAAAAAAAAAAAAAAAAAAAA=="
+        ]
+    "#).unwrap();
+    let poly = GF2mPoly::<P1>::from_action_poly(poly).make_monic();
+
+    assert!(poly.is_monic());
+    // do not change zero element when multiplying
+    assert!(poly.elems[0].is_zero());
+}
+
+#[test]
+/// 1: test correct trimming of array when adding same highest coefficient
+/// 2: Correctly add vecs of different length
+fn test_gfpoly_add() {
+    use serde_json::json;
+    use crate::utils::gf::P1;
+
+    let poly1: ActionGfPoly = serde_json::from_str(r#"
+        [
+            "QAAAAAAAAAAAAAAAAAAAAA==",
+            "GAAAAAAAAAAAAAAAAAAAAA=="
+        ]
+    "#).unwrap();
+    let poly1 = GF2mPoly::<P1>::from_action_poly(poly1);
+    let poly2: ActionGfPoly = serde_json::from_str(r#"
+        [
+            "AAAAAAAAAAAAAAAAAAAAAA==",
+            "GAAAAAAAAAAAAAAAAAAAAA=="
+        ]
+    "#).unwrap();
+    let poly2 = GF2mPoly::<P1>::from_action_poly(poly2);
+    let result = poly1 + poly2;
+    assert_eq!(json!(result).to_string(), r#"["QAAAAAAAAAAAAAAAAAAAAA=="]"#);
+
+    let poly1_raw = r#"
+        [
+            "GAAAAAAAAAAAAAAAAAAAAA==",
+            "AAAAAAAAAAAAAAAAAAAAAA==",
+            "GAAAAAAAAAAAAAAAAAAAAA==",
+            "GAAAAAAAAAAAAAAAAAAAAA=="
+        ]
+    "#;
+    let poly2_raw = r#"
+        [
+            "GAAAAAAAAAAAAAAAAAAAAA==",
+            "GAAAAAAAAAAAAAAAAAAAAA=="
+        ]
+    "#;
+    let poly1 = GF2mPoly::<P1>::from_action_poly(serde_json::from_str(poly1_raw).unwrap());
+    let poly2 = GF2mPoly::<P1>::from_action_poly(serde_json::from_str(poly2_raw).unwrap());
+    let result1 = poly1.clone() + poly2.clone();
+    let result2 = poly1 + poly2;
+    let expected = r#"["AAAAAAAAAAAAAAAAAAAAAA==","GAAAAAAAAAAAAAAAAAAAAA==","GAAAAAAAAAAAAAAAAAAAAA==","GAAAAAAAAAAAAAAAAAAAAA=="]"#;
+    assert_eq!(expected, json!(result1).to_string());
+    assert_eq!(expected, json!(result2).to_string())
+}
+
+#[test]
+fn test_gfpoly_mul() {
+    use serde_json::json;
+    use crate::utils::gf::P1;
+    let poly1_raw = r#"["GAAAAAAAAAAAAAAAAAAAAA==","AAAAAAAAAAAAAAAAAAAAAA==","GAAAAAAAAAAAAAAAAAAAAA==","GAAAAAAAAAAAAAAAAAAAAA=="]"#;
+    let poly2_raw = r#"
+        ["AAAAAAAAAAAAAAAAAAAAAA=="]
+    "#;
+    let poly1 = GF2mPoly::<P1>::from_action_poly(serde_json::from_str(poly1_raw).unwrap());
+    let poly2 = GF2mPoly::<P1>::from_action_poly(serde_json::from_str(poly2_raw).unwrap());
+    let result = &poly1 * &poly2;
+    assert_eq!(json!(result).to_string(), r#"["AAAAAAAAAAAAAAAAAAAAAA=="]"#);
+    let poly3 = GF2mPoly::<P1>::one();
+    let result = poly1 * poly3;
+    assert_eq!(json!(result).to_string(), poly1_raw);
+}
+
