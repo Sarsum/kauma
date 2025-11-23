@@ -25,6 +25,14 @@ struct FactoredModul {
     q: BigUint
 }
 
+fn to_factored_modul(a: BigUint, b: BigUint) -> FactoredModul {
+    return if a < b {
+        FactoredModul { p: a, q: b }
+    } else {
+        FactoredModul { p: b, q: a }
+    }
+}
+
 fn gernstyle_batch_gcd(moduli: &[BigUint]) -> Result<Vec<FactoredModul>> {
     // product tree for N_i
     let prod_tree_n = product_tree(moduli)?;
@@ -55,16 +63,11 @@ fn gernstyle_batch_gcd(moduli: &[BigUint]) -> Result<Vec<FactoredModul>> {
         if g > BigUint::one() && &g < ni {
             let p = g.clone();
             let q = ni / &g;
-            factors.push(FactoredModul { p: p, q: q });
+            factors.push(to_factored_modul(p, q));
         } else if &g == ni {
             // ni shares both primes with other RSA keys
             // therefore, we can do naive GCD
-            for nj in moduli {
-                if ni == nj {
-                    continue;
-                }
-                shared_factors.insert(g.clone());
-            }
+            shared_factors.insert(g.clone());
         }
     }
 
@@ -76,12 +79,7 @@ fn gernstyle_batch_gcd(moduli: &[BigUint]) -> Result<Vec<FactoredModul>> {
             if g > BigUint::one() && g < share {
                 // we found one of the two factors, other by trivial division
                 let other = &share / &g;
-                let factor = if g < other {
-                    FactoredModul { p: g, q: other }
-                } else {
-                    FactoredModul { p: other, q: g }
-                };
-                factors.push(factor);
+                factors.push(to_factored_modul(g, other));
                 // continue outer loop as we found the two factos of this key and we do not want duplicates
                 continue 'outer;
             }
