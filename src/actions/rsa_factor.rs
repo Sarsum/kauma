@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::{Result, anyhow};
 use num::{BigUint, One};
 use num::integer::gcd;
@@ -24,14 +26,13 @@ struct FactoredModul {
 }
 
 fn gernstyle_batch_gcd(moduli: &[BigUint]) -> Result<Vec<FactoredModul>> {
-    let mut factors: Vec<FactoredModul> = Vec::new();
-
-    // First: product tree for N_i
+    // product tree for N_i
     let prod_tree_n = product_tree(moduli)?;
     // prod_tree returns error which we are propagating if it is empty
     // hence, unwrap is safe
     let p = prod_tree_n.last().unwrap()[0].clone();
 
+    // product tree for Ni_squared
     let sq: Vec<BigUint> = moduli.iter().map(|n| n*n).collect();
     let prod_tree_sq = product_tree(&sq)?;
     // safe again
@@ -39,8 +40,13 @@ fn gernstyle_batch_gcd(moduli: &[BigUint]) -> Result<Vec<FactoredModul>> {
 
     let root_remainder = &p % &m;
 
+    // remainder tree, pushing root remainder to the top
     let zi = remainder_tree(&prod_tree_sq, root_remainder);
 
+    let mut factors: Vec<FactoredModul> = Vec::new();
+    // handle each shared factor just once
+    let mut shared_factors: HashSet<BigUint> = HashSet::new();
+    // zipping zi to zi_squared for factorization
     for (ni, zi_i) in moduli.iter().zip(zi.iter()) {
         let zi_div_ni = zi_i / ni;
 
@@ -51,9 +57,37 @@ fn gernstyle_batch_gcd(moduli: &[BigUint]) -> Result<Vec<FactoredModul>> {
             let q = ni / &g;
             factors.push(FactoredModul { p: p, q: q });
         } else if &g == ni {
-            eprintln!("edgecase")
+            // ni shares both primes with other RSA keys
+            // therefore, we can do naive GCD
+            for nj in moduli {
+                if ni == nj {
+                    continue;
+                }
+                shared_factors.insert(g.clone());
+            }
         }
     }
+
+    // now treat numbers where both factors are shared with other RSA keys
+    'outer: for share in shared_factors {
+        for key in moduli {
+            let g = gcd(share.clone(), key.clone());
+
+            if g > BigUint::one() && g < share {
+                // we found one of the two factors, other by trivial division
+                let other = &share / &g;
+                let factor = if g < other {
+                    FactoredModul { p: g, q: other }
+                } else {
+                    FactoredModul { p: other, q: g }
+                };
+                factors.push(factor);
+                // continue outer loop as we found the two factos of this key and we do not want duplicates
+                continue 'outer;
+            }
+        }
+    }
+
     // compare first p's and then q's
     factors.sort_by(|a, b| a.p.cmp(&b.p).then_with(|| a.q.cmp(&b.q)));
     Ok(factors)
