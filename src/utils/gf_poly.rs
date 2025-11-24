@@ -271,7 +271,7 @@ pub fn sff<M: ReducePoly>(mut f: GF2mPoly<M>) -> Result<Vec<PolySffFactor<M>>> {
     while f != GF2mPoly::<M>::one() {
         let y = gcd(&f, &c);
         if f != y {
-            z.push(PolySffFactor { factor: (&f / &y)?, exponent: exponent });
+            z.push(PolySffFactor { factor: (&f / &y)?.make_monic(), exponent: exponent });
         }
         c = (&c / &y)?;
         f = y;
@@ -285,7 +285,7 @@ pub fn sff<M: ReducePoly>(mut f: GF2mPoly<M>) -> Result<Vec<PolySffFactor<M>>> {
     }
     // honestly, I dont want to implement the sorting egain (PartialEq, Eq, PartialOrd, Ord)
     // hence, I am just doing it here
-    z.sort_by(|a, b| a.exponent.cmp(&b.exponent).then_with(|| a.factor.cmp(&b.factor)));
+    z.sort_by(|a, b| a.factor.cmp(&b.factor).then_with(|| a.exponent.cmp(&b.exponent)));
     Ok(z)
 }
 
