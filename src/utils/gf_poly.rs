@@ -323,7 +323,7 @@ pub fn ddf<M: ReducePoly>(f: GF2mPoly<M>) -> Result<Vec<PolyDdfFactor<M>>> {
         z.push(PolyDdfFactor { factor: f, degree: 1 });
     }
 
-    z.sort_by(|a, b| a.degree.cmp(&b.degree).then_with(|| a.factor.cmp(&b.factor)));
+    z.sort_by(|a, b| a.factor.cmp(&b.factor).then_with(|| a.degree.cmp(&b.degree)));
     Ok(z)
 }
 
