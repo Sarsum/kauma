@@ -2,6 +2,7 @@ use std::fmt;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 use num::{BigInt};
+use rug::Integer;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 use anyhow::{Result};
@@ -191,7 +192,7 @@ pub enum Action {
         poly: ActionPoly
     },
     RsaFactor {
-        moduli: Vec<ActionNumber>
+        moduli: Vec<ActionNumberInt>
     }
 }
 
@@ -199,6 +200,9 @@ pub enum Action {
 /// Type used when parsing the actions into the action enum
 /// Required as the numbers can either be integers or hex-strings
 pub struct ActionNumber(BigInt);
+
+#[derive(Debug)]
+pub struct ActionNumberInt(Integer);
 
 #[derive(Debug)]
 // Type to map the base64-encoded bytes of unkown length 
@@ -276,6 +280,57 @@ impl<'de> Deserialize<'de> for ActionNumber {
                     .ok_or_else(|| E::custom("invalid hex digits"))?;
 
                 Ok(ActionNumber(if neg { -n } else { n }))
+            }
+        }
+
+        deserializer.deserialize_any(V)
+    }
+}
+
+impl<'de> Deserialize<'de> for ActionNumberInt {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct V;
+
+        /// contains different "visit_TYPE" methods which will be invoked for the respective type being present when expecting an ActionNumber
+        impl<'de> de::Visitor<'de> for V {
+            type Value = ActionNumberInt;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(r#"a JSON integer or a hex string "0x..." / "-0x...""#)
+            }
+            
+            // serde only offers access to i64, not i32
+            // As we expect ints in range of -2^31 ... 2^31 - 1, implementing just i64 (instead of i64 and i128) is sufficient
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where E: de::Error {
+                Ok(ActionNumberInt(Integer::from(v)))
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where E: de::Error {
+                Ok(ActionNumberInt(Integer::from(v)))
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where E: de::Error {
+                let (neg, digits) = if let Some(rest) = s.strip_prefix("-0x") {
+                    (true, rest)
+                } else if let Some(rest) = s.strip_prefix("0x") {
+                    (false, rest)
+                } else {
+                    return Err(E::custom(r#"expected "0x" or "-0x" prefix"#));
+                };
+
+                if digits.is_empty() {
+                    return Err(E::custom("empty hex digits"));
+                }
+
+                let n = Integer::from_str_radix(digits, 16).map_err(|_| E::custom("invalid hex digits"))?;
+
+                Ok(ActionNumberInt(if neg { -n } else { n }))
             }
         }
 
