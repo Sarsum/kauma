@@ -32,21 +32,16 @@ fn to_factored_modul(a: Integer, b: Integer) -> FactoredModul {
 
 fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     // product tree for N_i
-    let prod_tree_n = ProductTree::build(moduli);
+    let mut prod_tree_n = ProductTree::build(moduli);
     // prod_tree returns error which we are propagating if it is empty
     // hence, unwrap is safe
     let p = prod_tree_n.get_root().clone();
 
     // product tree for Ni_squared
-    let sq: Vec<Integer> = moduli.iter().map(|n| Integer::from(n).square()).collect();
-    let prod_tree_sq = ProductTree::build(&sq);
-    // safe again
-    let m = prod_tree_sq.get_root();
-
-    let root_remainder = p.clone() % m;
+    prod_tree_n.square();
 
     // remainder tree, pushing root remainder to the top
-    let zi = prod_tree_sq.remainder_leaves(&root_remainder);
+    let zi = prod_tree_n.remainder_leaves(&p);
 
     let mut factors: Vec<FactoredModul> = Vec::new();
     // handle each shared factor just once
@@ -77,7 +72,7 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     // now treat numbers where both factors are shared with other RSA keys
     'outer: for i in shared_factors {
         let share = &moduli[i];
-        for key in moduli {
+        for key in moduli.iter() {
             g.assign(share.gcd_ref(key));
 
             if g > one && &g < share {
@@ -108,11 +103,15 @@ impl ProductTree {
         let leaf_start = input.len().next_power_of_two();
         let total_nodes = 2*leaf_start;
 
-        let mut nodes = vec![Integer::from(1); total_nodes];
+        let mut nodes = vec![Integer::new(); total_nodes];
 
         // put leafs to end of product tree
         for (i, n) in input.iter().enumerate() {
             nodes[leaf_start + i].assign(n);
+        }
+        // fill up empty leaves due to padding
+        for i in leaf_start + input.len()..total_nodes {
+            nodes[i].assign(1);
         }
         for i in (1..leaf_start).rev() {
             // we need to split because we want to write in head while reading in tail
@@ -122,6 +121,12 @@ impl ProductTree {
         }
 
         ProductTree { nodes, leaf_start, leaf_count: input.len() }
+    }
+
+    fn square(&mut self) {
+        for node in self.nodes.iter_mut() {
+            node.square_mut();
+        }
     }
 
     fn remainder_leaves(&self, root: &Integer) -> Vec<Integer> {
