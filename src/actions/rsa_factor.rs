@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use anyhow::Result;
 use rug::{Assign, Integer};
 use serde::Serialize;
@@ -37,10 +35,10 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     let prod_tree_n = ProductTree::build(moduli);
     // prod_tree returns error which we are propagating if it is empty
     // hence, unwrap is safe
-    let p = prod_tree_n.get_root();
+    let p = prod_tree_n.get_root().clone();
 
     // product tree for Ni_squared
-    let sq: Vec<Integer> = moduli.iter().map(|n| n.clone()*n).collect();
+    let sq: Vec<Integer> = moduli.iter().map(|n| Integer::from(n).square()).collect();
     let prod_tree_sq = ProductTree::build(&sq);
     // safe again
     let m = prod_tree_sq.get_root();
@@ -52,38 +50,40 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
 
     let mut factors: Vec<FactoredModul> = Vec::new();
     // handle each shared factor just once
-    let mut shared_factors: HashSet<Integer> = HashSet::new();
+    let mut shared_factors: Vec<usize> = Vec::new();
     // reusing the same integer again to avoid assigning new memory - maybe performance boost?
     let mut g = Integer::new();
+    let mut zi_div_ni = Integer::new();
     // reusing constant one for comparing
     let one = Integer::from(1);
     // zipping zi to zi_squared for factorization
-    for (ni, zi_i) in moduli.iter().zip(zi.iter()) {
-        let zi_div_ni = zi_i.clone() / ni;
+    for (i, (ni, zi_i)) in moduli.iter().zip(zi.iter()).enumerate() {
+        zi_div_ni.assign(zi_i.div_exact_ref(ni));
 
         g.assign(ni.gcd_ref(&zi_div_ni));
 
         if g > one && &g < ni {
             let p = g.clone();
             // we know division hast rest zero, div_exact is faster
-            let q = ni.clone().div_exact(&g);
+            let q = Integer::from(ni.div_exact_ref(&g));
             factors.push(to_factored_modul(p, q));
         } else if &g == ni {
             // ni shares both primes with other RSA keys
             // therefore, we can do naive GCD
-            shared_factors.insert(g.clone());
+            shared_factors.push(i);
         }
     }
 
     // now treat numbers where both factors are shared with other RSA keys
-    'outer: for share in shared_factors {
+    'outer: for i in shared_factors {
+        let share = &moduli[i];
         for key in moduli {
             g.assign(share.gcd_ref(key));
 
-            if g > one && g < share {
+            if g > one && &g < share {
                 // we found one of the two factors, other by trivial division
                 // we know division hast rest zero, div_exact is faster
-                let other = share.clone().div_exact(&g);
+                let other = Integer::from(share.div_exact_ref(&g));
                 factors.push(to_factored_modul(g.clone(), other));
                 // continue outer loop as we found the two factos of this key and we do not want duplicates
                 continue 'outer;
