@@ -8,9 +8,7 @@ use crate::utils::to_unsigned_number;
 
 pub fn run_action(moduli: Vec<ActionNumberInt>) -> Result<Value> {
     // convert parsed BigInt into BugUint for faster operations
-    let typed: Vec<Integer> = moduli.iter().map(|n| {
-        n.0.clone()
-    }).collect();
+    let typed: Vec<Integer> = moduli.into_iter().map(|x| x.0).collect();
 
     let result = gernstyle_batch_gcd(&typed)?;
 
