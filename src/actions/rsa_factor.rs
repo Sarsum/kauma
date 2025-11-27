@@ -30,16 +30,10 @@ fn to_factored_modul(a: Integer, b: Integer) -> FactoredModul {
 
 fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     // product tree for N_i
-    let mut prod_tree_n = ProductTree::build(moduli);
-    // prod_tree returns error which we are propagating if it is empty
-    // hence, unwrap is safe
-    let p = prod_tree_n.get_root().clone();
-
-    // product tree for Ni_squared
-    prod_tree_n.square();
+    let prod_tree_n = ProductTree::build(moduli);
 
     // remainder tree, pushing root remainder to the top
-    let zi = prod_tree_n.remainder_leaves(&p);
+    let zi = prod_tree_n.remainder_leaves();
 
     let mut factors: Vec<FactoredModul> = Vec::new();
     // handle each shared factor just once
@@ -137,38 +131,30 @@ impl ProductTree {
         ProductTree { nodes, leaf_start, leaf_count: input.len() }
     }
 
-    fn square(&mut self) {
-        for node in self.nodes.iter_mut() {
-            node.square_mut();
-        }
-    }
-
-    fn remainder_leaves(&self, root: &Integer) -> Vec<Integer> {
-        let mut remainders = vec![Integer::new(); self.nodes.len()];
-
-        // assign root remainder
-        remainders[1].assign(root);
-
+    fn remainder_leaves(mut self) -> Vec<Integer> {
+        let mut tmp = Integer::new();
+        // do not modify
         for i in 1..self.leaf_start {
-            let (head, tail) = remainders.split_at_mut(2*i);
-            let parent = &head[i];
+            let (head, tail) = self.nodes.split_at_mut(2*i);
+            // we need the copy later
+            tmp.assign(&head[i]);
+            let parent = &mut head[i];
 
-            // set left node
-            tail[0].assign(parent % &self.nodes[2*i]);
+            // square left node, then reduce
+            tail[0].square_mut();
+            parent.div_rem_mut(&mut tail[0]);
             // set right 
-            tail[1].assign(parent % &self.nodes[2*i + 1]);
+            tail[1].square_mut();
+            // do not need tmp value but remainder in tail[1]
+            tmp.div_rem_mut(&mut tail[1]);
         }
         // do not copy to new Vec but just reduce existing one
         // we want the remainders from leaf_start until leaf_start + leaf_count
         // first: remove everything up until leaf_start
-        remainders.drain(0..self.leaf_start);
+        self.nodes.drain(0..self.leaf_start);
         // second: remove padded leaves
-        remainders.truncate(self.leaf_count);
-        remainders
-    }
-
-    fn get_root(&self) -> &Integer {
-        &self.nodes[1]
+        self.nodes.truncate(self.leaf_count);
+        self.nodes
     }
 }
 
