@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rug::{Assign, Integer};
+use rug::{Assign, Complete, Integer};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -43,9 +43,9 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
 
     let mut factors: Vec<FactoredModul> = Vec::new();
     // handle each shared factor just once
-    let mut double_shared_factors: Vec<usize> = Vec::new();
+    let mut unfactored_moduli: Vec<usize> = Vec::new();
     // run double shared factors only on moduli where we know they share one factor with other(s)
-    let mut single_shared_factor: Vec<usize> = Vec::new();
+    let mut factored_moduli: Vec<usize> = Vec::new();
     // reusing the same integer again to avoid assigning new memory - maybe performance boost?
     let mut g = Integer::new();
     let mut zi_div_ni = Integer::new();
@@ -60,10 +60,10 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
         if &g == ni {
             // ni shares both primes with other RSA keys
             // therefore, we can do naive GCD
-            double_shared_factors.push(i);
+            unfactored_moduli.push(i);
         } else if g > one && &g < ni {
             // we have one shared factor, keep the id for the double shared factors
-            single_shared_factor.push(i);
+            factored_moduli.push(i);
             let p = g.clone();
             // we know division hast rest zero, div_exact is faster
             let q = Integer::from(ni.div_exact_ref(&g));
@@ -71,32 +71,25 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
         }
     }
 
-    // now treat numbers where both factors are shared with other RSA keys
-    // first, try against the factors which share a single factor
-    let mut unresolved: Vec<usize> = Vec::new();
-    'outer: for o_i in double_shared_factors {
+    while let Some(o_i) = factored_moduli.pop() {
         let share = &moduli[o_i];
-        for &k_i in single_shared_factor.iter() {
-            g.assign(share.gcd_ref(&moduli[k_i]));
-
+        factored_moduli.extend(unfactored_moduli.extract_if(.., |&mut i_i| {
+            let inner = &moduli[i_i];
+            g.assign(share.gcd_ref(inner));
             if g > one && &g < share {
-                // we found one of the two factors, other by trivial division
-                // we know division hast rest zero, div_exact is faster
-                let other = Integer::from(share.div_exact_ref(&g));
-                factors.push(to_factored_modul(g.clone(), other));
-                // continue outer loop as we found the two factos of this key and we do not want duplicates
-                continue 'outer;
+                let p = g.clone();
+                let q = inner.div_exact_ref(&p).complete();
+                factors.push(to_factored_modul(p, q));
+                return true
             }
-        }
-
-        // did not continue 'outer, meaning we did not resolve this item
-        unresolved.push(o_i);
+            false
+        }));
     }
 
-    'outer: for &o_i in unresolved.iter() {
+    'outer: for &o_i in unfactored_moduli.iter() {
         let share = &moduli[o_i];
         // run only through those we did not test yet
-        for &k_i in unresolved.iter() {
+        for &k_i in unfactored_moduli.iter() {
             g.assign(share.gcd_ref(&moduli[k_i]));
 
             if g > one && &g < share {
