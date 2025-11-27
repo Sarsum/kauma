@@ -45,7 +45,9 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
 
     let mut factors: Vec<FactoredModul> = Vec::new();
     // handle each shared factor just once
-    let mut shared_factors: Vec<usize> = Vec::new();
+    let mut double_shared_factors: Vec<usize> = Vec::new();
+    // run double shared factors only on moduli where we know they share one factor with other(s)
+    let mut single_shared_factor: Vec<usize> = Vec::new();
     // reusing the same integer again to avoid assigning new memory - maybe performance boost?
     let mut g = Integer::new();
     let mut zi_div_ni = Integer::new();
@@ -57,23 +59,27 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
 
         g.assign(ni.gcd_ref(&zi_div_ni));
 
-        if g > one && &g < ni {
+        if &g == ni {
+            // ni shares both primes with other RSA keys
+            // therefore, we can do naive GCD
+            double_shared_factors.push(i);
+        } else if g > one && &g < ni {
+            // we have one shared factor, keep the id for the double shared factors
+            single_shared_factor.push(i);
             let p = g.clone();
             // we know division hast rest zero, div_exact is faster
             let q = Integer::from(ni.div_exact_ref(&g));
             factors.push(to_factored_modul(p, q));
-        } else if &g == ni {
-            // ni shares both primes with other RSA keys
-            // therefore, we can do naive GCD
-            shared_factors.push(i);
         }
     }
 
     // now treat numbers where both factors are shared with other RSA keys
-    'outer: for i in shared_factors {
-        let share = &moduli[i];
-        for key in moduli.iter() {
-            g.assign(share.gcd_ref(key));
+    // first, try against the factors which share a single factor
+    let mut unresolved: Vec<usize> = Vec::new();
+    'outer: for o_i in double_shared_factors {
+        let share = &moduli[o_i];
+        for &k_i in single_shared_factor.iter() {
+            g.assign(share.gcd_ref(&moduli[k_i]));
 
             if g > one && &g < share {
                 // we found one of the two factors, other by trivial division
@@ -81,6 +87,23 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
                 let other = Integer::from(share.div_exact_ref(&g));
                 factors.push(to_factored_modul(g.clone(), other));
                 // continue outer loop as we found the two factos of this key and we do not want duplicates
+                continue 'outer;
+            }
+        }
+
+        // did not continue 'outer, meaning we did not resolve this item
+        unresolved.push(o_i);
+    }
+
+    'outer: for &o_i in unresolved.iter() {
+        let share = &moduli[o_i];
+        // run only through those we did not test yet
+        for &k_i in unresolved.iter() {
+            g.assign(share.gcd_ref(&moduli[k_i]));
+
+            if g > one && &g < share {
+                let other = Integer::from(share.div_exact_ref(&g));
+                factors.push(to_factored_modul(g.clone(), other));
                 continue 'outer;
             }
         }
@@ -144,7 +167,13 @@ impl ProductTree {
             // set right 
             tail[1].assign(parent % &self.nodes[2*i + 1]);
         }
-        remainders[self.leaf_start .. self.leaf_start + self.leaf_count].to_vec()
+        // do not copy to new Vec but just reduce existing one
+        // we want the remainders from leaf_start until leaf_start + leaf_count
+        // first: remove everything up until leaf_start
+        remainders.drain(0..self.leaf_start);
+        // second: remove padded leaves
+        remainders.truncate(self.leaf_count);
+        remainders
     }
 
     fn get_root(&self) -> &Integer {
