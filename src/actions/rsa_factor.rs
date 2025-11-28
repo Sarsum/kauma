@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rug::ops::RemFrom;
 use rug::{Assign, Complete, Integer};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -132,21 +133,18 @@ impl ProductTree {
     }
 
     fn remainder_leaves(mut self) -> Vec<Integer> {
-        let mut tmp = Integer::new();
         // do not modify
         for i in 1..self.leaf_start {
             let (head, tail) = self.nodes.split_at_mut(2*i);
-            // we need the copy later
-            tmp.assign(&head[i]);
-            let parent = &mut head[i];
+            let parent = &head[i];
 
             // square left node, then reduce
             tail[0].square_mut();
-            parent.div_rem_mut(&mut tail[0]);
+            // rem_from is slightly faster than modulo_from
+            tail[0].rem_from(parent);
             // set right 
             tail[1].square_mut();
-            // do not need tmp value but remainder in tail[1]
-            tmp.div_rem_mut(&mut tail[1]);
+            tail[1].rem_from(parent);
         }
         // do not copy to new Vec but just reduce existing one
         // we want the remainders from leaf_start until leaf_start + leaf_count
