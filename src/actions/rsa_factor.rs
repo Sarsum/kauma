@@ -11,7 +11,7 @@ pub fn run_action(moduli: Vec<ActionNumberInt>) -> Result<Value> {
     // convert parsed BigInt into BugUint for faster operations
     let typed: Vec<Integer> = moduli.into_iter().map(|x| x.0).collect();
 
-    let result = gernstyle_batch_gcd(&typed)?;
+    let result = batch_gcd(&typed)?;
 
     Ok(json!({"factored_moduli": result}))
 }
@@ -21,15 +21,17 @@ struct FactoredModul {
     q: Integer
 }
 
-fn to_factored_modul(a: Integer, b: Integer) -> FactoredModul {
-    return if a < b {
-        FactoredModul { p: a, q: b }
-    } else {
-        FactoredModul { p: b, q: a }
+impl FactoredModul {
+    fn from_unsorted(a: Integer, b: Integer) -> FactoredModul {
+        return if a < b {
+            FactoredModul { p: a, q: b }
+        } else {
+            FactoredModul { p: b, q: a }
+        }
     }
 }
 
-fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
+fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     // product tree for N_i
     let prod_tree_n = ProductTree::build(moduli);
 
@@ -62,35 +64,56 @@ fn gernstyle_batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
             let p = g.clone();
             // we know division hast rest zero, div_exact is faster
             let q = Integer::from(ni.div_exact_ref(&g));
-            factors.push(to_factored_modul(p, q));
+            factors.push(FactoredModul::from_unsorted(p, q));
         }
     }
 
+    // using factored_moduli as a stack
+    // popping one element at a time and check against the unfactored moduli
     while let Some(o_i) = factored_moduli.pop() {
         let share = &moduli[o_i];
+        // extract_if removes items matching the filter and returns an iterator containing them
+        // we need to add every new factored moduli to the stack for recursive cases
         factored_moduli.extend(unfactored_moduli.extract_if(.., |&mut i_i| {
             let inner = &moduli[i_i];
             g.assign(share.gcd_ref(inner));
             if g > one && &g < share {
                 let p = g.clone();
                 let q = inner.div_exact_ref(&p).complete();
-                factors.push(to_factored_modul(p, q));
+                factors.push(FactoredModul::from_unsorted(p, q));
                 return true
             }
             false
         }));
     }
 
-    'outer: for &o_i in unfactored_moduli.iter() {
-        let share = &moduli[o_i];
-        // run only through those we did not test yet
-        for &k_i in unfactored_moduli.iter() {
-            g.assign(share.gcd_ref(&moduli[k_i]));
-
-            if g > one && &g < share {
-                let other = Integer::from(share.div_exact_ref(&g));
-                factors.push(to_factored_modul(g.clone(), other));
-                continue 'outer;
+    // assign memory only if required
+    if unfactored_moduli.len() > 0 {
+        let mut factored = vec![false; moduli.len()];
+        // last check: two shared factors among the other unfactored moduli containg two shared
+        'outer: for &o_i in unfactored_moduli.iter() {
+            // factored o_i already because a previous moduli was a hit
+            if factored[o_i] {
+                continue;
+            }
+            let share = &moduli[o_i];
+            // run only through those we did not test yet
+            for &k_i in unfactored_moduli.iter() {
+                g.assign(share.gcd_ref(&moduli[k_i]));
+                // finding a valid GCD means that inner and outer are a match
+                // we can calculate each others other factor at the same time
+                if g > one && &g < share {
+                    let other_outer = Integer::from(share.div_exact_ref(&g));
+                    factors.push(FactoredModul::from_unsorted(g.clone(), other_outer));
+                    factored[o_i] = true;
+                    // only push k_i if we did not factore it already by a prior item
+                    if !factored[k_i] {
+                        let other_inner = Integer::from(moduli[k_i].div_exact_ref(&g));
+                        factors.push(FactoredModul::from_unsorted(g.clone(), other_inner));
+                        factored[k_i] = true;
+                    }
+                    continue 'outer;
+                }
             }
         }
     }
