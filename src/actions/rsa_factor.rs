@@ -46,8 +46,6 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     // reusing the same integer again to avoid assigning new memory - maybe performance boost?
     let mut g = Integer::new();
     let mut zi_div_ni = Integer::new();
-    // reusing constant one for comparing
-    let one = Integer::from(1);
     // zipping zi to zi_squared for factorization
     for (i, (ni, zi_i)) in moduli.iter().zip(zi.iter()).enumerate() {
         zi_div_ni.assign(zi_i.div_exact_ref(ni));
@@ -58,7 +56,7 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
             // ni shares both primes with other RSA keys
             // therefore, we can do naive GCD
             unfactored_moduli.push(i);
-        } else if g > one && &g < ni {
+        } else if g > 1 && &g < ni {
             // we have one shared factor, keep the id for the double shared factors
             factored_moduli.push(i);
             let p = g.clone();
@@ -77,7 +75,7 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
         factored_moduli.extend(unfactored_moduli.extract_if(.., |&mut i_i| {
             let inner = &moduli[i_i];
             g.assign(share.gcd_ref(inner));
-            if g > one && &g < share {
+            if g > 1 && &g < share {
                 let p = g.clone();
                 let q = inner.div_exact_ref(&p).complete();
                 factors.push(FactoredModul::from_unsorted(p, q));
@@ -102,7 +100,7 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
                 g.assign(share.gcd_ref(&moduli[k_i]));
                 // finding a valid GCD means that inner and outer are a match
                 // we can calculate each others other factor at the same time
-                if g > one && &g < share {
+                if g > 1 && &g < share {
                     let other_outer = Integer::from(share.div_exact_ref(&g));
                     factors.push(FactoredModul::from_unsorted(g.clone(), other_outer));
                     factored[o_i] = true;
