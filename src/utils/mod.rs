@@ -1,7 +1,6 @@
 use anyhow::{Result, anyhow};
 use num::{BigInt};
 use num::traits::{ToPrimitive, Signed};
-use rug::Integer;
 use serde_json::{Number, Value};
 
 pub mod aes;
@@ -18,17 +17,6 @@ pub fn to_number(value: BigInt) -> Value {
         }
         result.push_str("0x");
         result.push_str(&value.abs().to_str_radix(16));
-        return Value::String(result);
-    }
-}
-
-pub fn to_unsigned_number(value: &Integer) -> Value {
-    return if let Some(num) = value.to_i32() {
-        Value::Number(Number::from(num))
-    } else {
-        let mut result = String::new();
-        result.push_str("0x");
-        result.push_str(&value.to_string_radix(16));
         return Value::String(result);
     }
 }
