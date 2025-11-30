@@ -115,18 +115,22 @@ impl <M: ReducePoly> GF2m<M> {
         let b1 = (b >> 64) as u64;
         let b2 = b as u64;
 
+        // multiplies two u64 into hi and lo u64 blocks 
         unsafe fn clmul_64(x: u64, y: u64) -> (u64, u64) {
             unsafe {
                 let vx = _mm_set_epi64x(0, x as i64);
                 let vy = _mm_set_epi64x(0, y as i64);
+                // perform carryless multiplication of the two pointers into result pointer
                 let r = _mm_clmulepi64_si128(vx, vy, 0x00);
                 let mut tmp = [0u64; 2];
+                // store crmul result into memory (tmp variable)
                 _mm_storeu_si128(tmp.as_mut_ptr() as *mut __m128i, r);
                 (tmp[1], tmp[0]) 
             }
         }
 
         unsafe {
+            // algorithm from Intel paper, see above
             let (c1, c0) = clmul_64(a1,       b1);
             let (d1, d0) = clmul_64(a2,       b2);
             let (e1, e0) = clmul_64(a1 ^ a2, b1 ^ b2);
