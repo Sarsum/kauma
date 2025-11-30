@@ -19,30 +19,36 @@ pub fn run_action(moduli: Vec<ActionNumberInt>) -> Result<Value> {
 
 struct FactoredVal {
     value: String,
-    is_small: bool
+    is_small: bool,
 }
 
 impl FactoredVal {
     fn from_int(num: &Integer) -> FactoredVal {
-        FactoredVal { value: num.to_string_radix(16), is_small: num.significant_bits() <= 31 }
+        FactoredVal {
+            value: num.to_string_radix(16),
+            is_small: num.significant_bits() <= 31,
+        }
     }
 
     fn to_value(&self) -> Result<Value> {
         return if self.is_small {
             // more performant for large nums if we convert small nums to hex and back to num
-            Ok(Value::Number(Number::from(i32::from_str_radix(&self.value, 16).map_err(|_| anyhow!("rsa_factor: int to hex to int error"))?)))
+            Ok(Value::Number(Number::from(
+                i32::from_str_radix(&self.value, 16)
+                    .map_err(|_| anyhow!("rsa_factor: int to hex to int error"))?,
+            )))
         } else {
             let mut result = String::with_capacity(self.value.len() + 2);
             result.push_str("0x");
             result.push_str(&self.value);
             Ok(Value::String(result))
-        }
+        };
     }
 }
 
 struct FactoredModul {
     p: FactoredVal,
-    q: FactoredVal
+    q: FactoredVal,
 }
 
 impl FactoredModul {
@@ -51,11 +57,14 @@ impl FactoredModul {
             Self::from_sorted(a, b)
         } else {
             Self::from_sorted(b, a)
-        }
+        };
     }
 
     fn from_sorted(p: &Integer, q: &Integer) -> FactoredModul {
-        FactoredModul { p: FactoredVal::from_int(p), q: FactoredVal::from_int(q) }
+        FactoredModul {
+            p: FactoredVal::from_int(p),
+            q: FactoredVal::from_int(q),
+        }
     }
 }
 
@@ -106,7 +115,7 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
             if g > 1 && &g < share {
                 q.assign(inner.div_exact_ref(&g));
                 factors.push(FactoredModul::from_unsorted(&g, &q));
-                return true
+                return true;
             }
             false
         }));
@@ -126,6 +135,10 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
             let share = &moduli[o_i];
             // run only through those we did not test yet
             for &k_i in unfactored_moduli.iter() {
+                // skip pointless GCD
+                if o_i == k_i {
+                    continue;
+                }
                 g.assign(share.gcd_ref(&moduli[k_i]));
                 // finding a valid GCD means that inner and outer are a match
                 // we can calculate each others other factor at the same time
@@ -160,13 +173,13 @@ fn cmp_hex(a: &str, b: &str) -> Ordering {
 struct ProductTree {
     nodes: Vec<Integer>,
     leaf_start: usize,
-    leaf_count: usize
+    leaf_count: usize,
 }
 
 impl ProductTree {
     fn build(input: &[Integer]) -> Self {
         let leaf_start = input.len().next_power_of_two();
-        let total_nodes = 2*leaf_start;
+        let total_nodes = 2 * leaf_start;
 
         let mut nodes = vec![Integer::new(); total_nodes];
 
@@ -180,25 +193,29 @@ impl ProductTree {
         }
         for i in (1..leaf_start).rev() {
             // we need to split because we want to write in head while reading in tail
-            let (head, tail) = nodes.split_at_mut(2*i);
+            let (head, tail) = nodes.split_at_mut(2 * i);
             // parent at position i, left at 2*i (0 in tail) and right at 2*i + 1 (1 in tail)
             head[i].assign(&tail[0] * &tail[1]);
         }
 
-        ProductTree { nodes, leaf_start, leaf_count: input.len() }
+        ProductTree {
+            nodes,
+            leaf_start,
+            leaf_count: input.len(),
+        }
     }
 
     fn remainder_leaves(mut self) -> Vec<Integer> {
         // do not modify
         for i in 1..self.leaf_start {
-            let (head, tail) = self.nodes.split_at_mut(2*i);
+            let (head, tail) = self.nodes.split_at_mut(2 * i);
             let parent = &head[i];
 
             // square left node, then reduce
             tail[0].square_mut();
             // rem_from is slightly faster than modulo_from
             tail[0].rem_from(parent);
-            // set right 
+            // set right
             tail[1].square_mut();
             tail[1].rem_from(parent);
         }
@@ -214,26 +231,51 @@ impl ProductTree {
 
 impl Serialize for FactoredModul {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
-        let arr = [self.p.to_value().map_err(|e| <S::Error as serde::ser::Error>::custom(e.to_string()))?,
-            self.q.to_value().map_err(|e| <S::Error as serde::ser::Error>::custom(e.to_string()))?];
+    where
+        S: serde::Serializer,
+    {
+        let arr = [
+            self.p
+                .to_value()
+                .map_err(|e| <S::Error as serde::ser::Error>::custom(e.to_string()))?,
+            self.q
+                .to_value()
+                .map_err(|e| <S::Error as serde::ser::Error>::custom(e.to_string()))?,
+        ];
         arr.serialize(serializer)
     }
 }
 
 #[test]
 fn test_new_product_tree() {
-    let nums = vec![Integer::from(2), Integer::from(3), Integer::from(4), Integer::from(5)];
+    let nums = vec![
+        Integer::from(2),
+        Integer::from(3),
+        Integer::from(4),
+        Integer::from(5),
+    ];
     let expected = vec![Integer::from(120), Integer::from(6), Integer::from(20)];
     let result = ProductTree::build(&nums);
-    let branches = &result.nodes[1..result.leaf_start-(result.leaf_count % 2)];
+    let branches = &result.nodes[1..result.leaf_start - (result.leaf_count % 2)];
     assert_eq!(branches, &expected);
 
-    let nums = vec![Integer::from(2), Integer::from(3), Integer::from(4), Integer::from(5), Integer::from(6)];
-    let expected = vec![Integer::from(120*6), Integer::from(120), Integer::from(6), Integer::from(6), Integer::from(20), Integer::from(6)];
+    let nums = vec![
+        Integer::from(2),
+        Integer::from(3),
+        Integer::from(4),
+        Integer::from(5),
+        Integer::from(6),
+    ];
+    let expected = vec![
+        Integer::from(120 * 6),
+        Integer::from(120),
+        Integer::from(6),
+        Integer::from(6),
+        Integer::from(20),
+        Integer::from(6),
+    ];
     let result = ProductTree::build(&nums);
     // substract 1 if leaf_count is odd, as we padded with 1
-    let branches = &result.nodes[1..result.leaf_start-(result.leaf_count % 2)];
+    let branches = &result.nodes[1..result.leaf_start - (result.leaf_count % 2)];
     assert_eq!(branches, &expected);
 }
