@@ -75,11 +75,11 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     // remainder tree, pushing root remainder to the top
     let zi = prod_tree_n.remainder_leaves();
 
-    let mut factors: Vec<FactoredModul> = Vec::new();
+    let mut factors: Vec<FactoredModul> = Vec::with_capacity(moduli.len() / 8);
     // handle each shared factor just once
-    let mut unfactored_moduli: Vec<usize> = Vec::new();
+    let mut unfactored_moduli: Vec<usize> = Vec::with_capacity(moduli.len() / 8);
     // run double shared factors only on moduli where we know they share one factor with other(s)
-    let mut factored_moduli: Vec<usize> = Vec::new();
+    let mut factored_moduli: Vec<usize> = Vec::with_capacity(moduli.len() / 8);
     // reusing the same integer again to avoid assigning new memory - maybe performance boost?
     let mut g = Integer::new();
     let mut zi_div_ni = Integer::new();
