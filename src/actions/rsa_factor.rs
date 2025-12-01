@@ -107,18 +107,22 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     // popping one element at a time and check against the unfactored moduli
     while let Some(o_i) = factored_moduli.pop() {
         let share = &moduli[o_i];
-        // extract_if removes items matching the filter and returns an iterator containing them
-        // we need to add every new factored moduli to the stack for recursive cases
-        factored_moduli.extend(unfactored_moduli.extract_if(.., |&mut i_i| {
+        // remove factored moduli and add them to the stack for recursive cases
+        let mut i = 0;
+        while i < unfactored_moduli.len() {
+            let i_i = unfactored_moduli[i];
             let inner = &moduli[i_i];
             g.assign(share.gcd_ref(inner));
+
             if g > 1 && &g < share {
                 q.assign(inner.div_exact_ref(&g));
                 factors.push(FactoredModul::from_unsorted(&g, &q));
-                return true;
+                factored_moduli.push(i_i);
+                unfactored_moduli.swap_remove(i);
+            } else {
+                i += 1;
             }
-            false
-        }));
+        }
     }
 
     // assign memory only if required
