@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 
 use anyhow::{Result, anyhow};
-use rug::ops::RemFrom;
 use rug::{Assign, Integer};
 use serde::Serialize;
 use serde_json::{Number, Value, json};
@@ -82,13 +81,10 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     let mut factored_moduli: Vec<usize> = Vec::new();
     // reusing the same integer again to avoid assigning new memory - maybe performance boost?
     let mut g = Integer::new();
-    let mut zi_div_ni = Integer::new();
     let mut q = Integer::new();
     // zipping zi to zi_squared for factorization
     for (i, (ni, zi_i)) in moduli.iter().zip(zi.iter()).enumerate() {
-        zi_div_ni.assign(zi_i.div_exact_ref(ni));
-
-        g.assign(ni.gcd_ref(&zi_div_ni));
+        g.assign(ni.gcd_ref(&zi_i));
 
         if &g == ni {
             // ni shares both primes with other RSA keys
@@ -209,28 +205,36 @@ impl ProductTree {
         }
     }
 
-    fn remainder_leaves(mut self) -> Vec<Integer> {
-        // just modify existing Vec
-        // It is a bit ugly, but increases speed!
+    // alternative, faster algorithm which is not doing P mod Ni^1
+    fn remainder_leaves(&self) -> Vec<Integer> {
+        let total_nodes = self.nodes.len();
+        let mut rem = vec![Integer::new(); total_nodes];
+
+        // root is 1
+        rem[1].assign(1);
+
+        let mut tmp = Integer::new();
         for i in 1..self.leaf_start {
-            let (head, tail) = self.nodes.split_at_mut(2 * i);
+            let (head, tail) = rem.split_at_mut(2 * i);
             let parent = &head[i];
 
-            // square left node, then reduce
-            tail[0].square_mut();
+            let left_ptree_id = 2 * i;
+            let right_ptree_id = 2 * i + 1;
+
+            tmp.assign(&self.nodes[right_ptree_id] * parent);
             // rem_from is slightly faster than modulo_from
-            tail[0].rem_from(parent); // equals parent % tail[0]
+            tail[0].assign(tmp.modulo_ref(&self.nodes[left_ptree_id])); // equals tmp % tail[0]
             // set right
-            tail[1].square_mut();
-            tail[1].rem_from(parent);
+            tmp.assign(&self.nodes[left_ptree_id] * parent);
+            tail[1].assign(tmp.modulo_ref(&self.nodes[right_ptree_id]));
         }
         // do not copy to new Vec but just reduce existing one
         // we want the remainders from leaf_start until leaf_start + leaf_count
         // first: remove everything up until leaf_start
-        self.nodes.drain(0..self.leaf_start);
+        rem.drain(0..self.leaf_start);
         // second: remove padded leaves
-        self.nodes.truncate(self.leaf_count);
-        self.nodes
+        rem.truncate(self.leaf_count);
+        rem
     }
 }
 
