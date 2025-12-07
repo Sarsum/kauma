@@ -210,7 +210,8 @@ impl ProductTree {
     }
 
     fn remainder_leaves(mut self) -> Vec<Integer> {
-        // do not modify
+        // just modify existing Vec
+        // It is a bit ugly, but increases speed!
         for i in 1..self.leaf_start {
             let (head, tail) = self.nodes.split_at_mut(2 * i);
             let parent = &head[i];
@@ -218,7 +219,7 @@ impl ProductTree {
             // square left node, then reduce
             tail[0].square_mut();
             // rem_from is slightly faster than modulo_from
-            tail[0].rem_from(parent);
+            tail[0].rem_from(parent); // equals parent % tail[0]
             // set right
             tail[1].square_mut();
             tail[1].rem_from(parent);
