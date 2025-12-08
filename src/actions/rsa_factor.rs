@@ -210,21 +210,16 @@ impl ProductTree {
         // root is 1
         self.nodes[1].assign(1);
 
-        let mut tmp_left = Integer::new();
-        let mut tmp_right = Integer::new();
-        let mut dividend = Integer::new();
+        let mut dividend_left = Integer::new();
+        let mut dividend_right = Integer::new();
         for i in 1..self.leaf_start {
             let (head, tail) = self.nodes.split_at_mut(2 * i);
             let parent = &head[i];
 
-            tmp_left.assign(&tail[0]);
-            tmp_right.assign(&tail[1]);
-
-            dividend.assign(parent * &tmp_right);
-            tail[0].modulo_from(&dividend);
-            // set right
-            dividend.assign(parent * &tmp_left);
-            tail[1].modulo_from(&dividend);
+            dividend_left.assign(parent * &tail[1]);
+            dividend_right.assign(parent * &tail[0]);
+            tail[0].modulo_from(&dividend_left);
+            tail[1].modulo_from(&dividend_right);
         }
         // do not copy to new Vec but just reduce existing one
         // we want the remainders from leaf_start until leaf_start + leaf_count
