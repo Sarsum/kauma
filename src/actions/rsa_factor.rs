@@ -206,35 +206,33 @@ impl ProductTree {
     }
 
     // alternative, faster algorithm which is not doing P mod Ni^1
-    fn remainder_leaves(&self) -> Vec<Integer> {
-        let total_nodes = self.nodes.len();
-        let mut rem = vec![Integer::new(); total_nodes];
-
+    fn remainder_leaves(mut self) -> Vec<Integer> {
         // root is 1
-        rem[1].assign(1);
+        self.nodes[1].assign(1);
 
-        let mut tmp = Integer::new();
+        let mut tmp_left = Integer::new();
+        let mut tmp_right = Integer::new();
+        let mut dividend = Integer::new();
         for i in 1..self.leaf_start {
-            let (head, tail) = rem.split_at_mut(2 * i);
+            let (head, tail) = self.nodes.split_at_mut(2 * i);
             let parent = &head[i];
 
-            let left_ptree_id = 2 * i;
-            let right_ptree_id = 2 * i + 1;
+            tmp_left.assign(&tail[0]);
+            tmp_right.assign(&tail[1]);
 
-            tmp.assign(&self.nodes[right_ptree_id] * parent);
-            // rem_from is slightly faster than modulo_from
-            tail[0].assign(tmp.modulo_ref(&self.nodes[left_ptree_id])); // equals tmp % tail[0]
+            dividend.assign(parent * &tmp_right);
+            tail[0].modulo_from(&dividend);
             // set right
-            tmp.assign(&self.nodes[left_ptree_id] * parent);
-            tail[1].assign(tmp.modulo_ref(&self.nodes[right_ptree_id]));
+            dividend.assign(parent * &tmp_left);
+            tail[1].modulo_from(&dividend);
         }
         // do not copy to new Vec but just reduce existing one
         // we want the remainders from leaf_start until leaf_start + leaf_count
         // first: remove everything up until leaf_start
-        rem.drain(0..self.leaf_start);
+        self.nodes.drain(0..self.leaf_start);
         // second: remove padded leaves
-        rem.truncate(self.leaf_count);
-        rem
+        self.nodes.truncate(self.leaf_count);
+        self.nodes
     }
 }
 
