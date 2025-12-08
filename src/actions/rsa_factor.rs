@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use anyhow::{Result, anyhow};
-use rug::{Assign, Integer};
+use rug::{Assign, Integer, ops::RemFrom};
 use serde::Serialize;
 use serde_json::{Number, Value, json};
 
@@ -218,8 +218,9 @@ impl ProductTree {
 
             dividend_left.assign(parent * &tail[1]);
             dividend_right.assign(parent * &tail[0]);
-            tail[0].modulo_from(&dividend_left);
-            tail[1].modulo_from(&dividend_right);
+            // rem_from is slightly faster than modulo_from
+            tail[0].rem_from(&dividend_left);
+            tail[1].rem_from(&dividend_right);
         }
         // do not copy to new Vec but just reduce existing one
         // we want the remainders from leaf_start until leaf_start + leaf_count
