@@ -1,5 +1,8 @@
-use core::ops::{Add, Mul, Div};
-use std::{cmp::Ordering, ops::{AddAssign, BitXorAssign, MulAssign}};
+use core::ops::{Add, Div, Mul};
+use std::{
+    cmp::Ordering,
+    ops::{AddAssign, BitXorAssign, MulAssign},
+};
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 use num::{BigInt, One, Zero, bigint::Sign};
@@ -51,7 +54,7 @@ impl ReducePoly for P2 {
     const DEG: u32 = 128;
     // Same as above, this is 1 + a33 + a69 + a98 + a128
     //const MOD: u128 = (1u128 << 127) | (1u128 << 94) | (1u128 << 58) | (1u128 << 29);
-    const MOD : u128 = (1u128) | (1u128 << 33) | (1u128 << 69) | (1u128 << 98);
+    const MOD: u128 = (1u128) | (1u128 << 33) | (1u128 << 69) | (1u128 << 98);
 
     fn reduce_256(hi: u128, lo: u128) -> u128 {
         // m(x) = x^128 + x^98 + x^69 + x^33 + 1
@@ -73,26 +76,43 @@ impl ReducePoly for P2 {
         let mut out = lo ^ fold(hi);
         let mut c = carry(hi);
 
-        // Iterate carries until nothing remains. Typically a few iterations at most.
-        while c != 0 {
-            out ^= fold(c);
-            c = carry(c);
-        }
+        // Worst-case x^127 * x^127 --> x^254: 5 iterations is enough for this modulus
+        // x^128+k reduces to: x^k+98 + x^k+69 + x^k+33 + x^k
+        // --> 254 reduces to 126+98
+        // --> 224 reduces to 96+98
+        // --> 194 reduces to 66+98
+        // --> 164 reduces to 36+98
+        // --> 134 reduces to 6 + 98
+        // --> x^104
+        out ^= fold(c); c = carry(c);
+        out ^= fold(c); c = carry(c);
+        out ^= fold(c); c = carry(c);
+        out ^= fold(c); c = carry(c);
+        out ^= fold(c);
         out
     }
 }
 
-impl <M: ReducePoly> GF2m<M> {
+impl<M: ReducePoly> GF2m<M> {
     pub fn new(value: u128) -> Self {
-        Self { value: value, _m: Default::default() }
+        Self {
+            value: value,
+            _m: Default::default(),
+        }
     }
 
     pub fn from_be_bytes(value: [u8; 16]) -> Self {
-        Self { value: u128::from_be_bytes(value).reverse_bits(), _m: Default::default() }
+        Self {
+            value: u128::from_be_bytes(value).reverse_bits(),
+            _m: Default::default(),
+        }
     }
 
     pub fn zero() -> Self {
-        Self { value: 0u128, _m: Default::default() }
+        Self {
+            value: 0u128,
+            _m: Default::default(),
+        }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -100,7 +120,10 @@ impl <M: ReducePoly> GF2m<M> {
     }
 
     pub fn one() -> Self {
-        Self { value: 1u128, _m: Default::default() }
+        Self {
+            value: 1u128,
+            _m: Default::default(),
+        }
     }
 
     // using pclmulqdq from Intel CPU features: Algorithm 2 from
@@ -115,24 +138,24 @@ impl <M: ReducePoly> GF2m<M> {
         let b1 = (b >> 64) as u64;
         let b2 = b as u64;
 
-        // multiplies two u64 into hi and lo u64 blocks 
+        // multiplies two u64 into hi and lo u64 blocks
         unsafe fn clmul_64(x: u64, y: u64) -> (u64, u64) {
             unsafe {
                 let vx = _mm_set_epi64x(0, x as i64);
                 let vy = _mm_set_epi64x(0, y as i64);
                 // perform carryless multiplication of the two pointers into result pointer
                 let r = _mm_clmulepi64_si128(vx, vy, 0x00);
-                let mut tmp = [0u64; 2];
-                // store crmul result into memory (tmp variable)
-                _mm_storeu_si128(tmp.as_mut_ptr() as *mut __m128i, r);
-                (tmp[1], tmp[0]) 
+
+                let lo = _mm_cvtsi128_si64(r) as u64;
+                let hi = _mm_extract_epi64(r, 1) as u64;
+                (hi, lo)
             }
         }
 
         unsafe {
             // algorithm from Intel paper, see above
-            let (c1, c0) = clmul_64(a1,       b1);
-            let (d1, d0) = clmul_64(a2,       b2);
+            let (c1, c0) = clmul_64(a1, b1);
+            let (d1, d0) = clmul_64(a2, b2);
             let (e1, e0) = clmul_64(a1 ^ a2, b1 ^ b2);
 
             let hi = (c1 as u128) << 64 | (c0 ^ c1 ^ d1 ^ e1) as u128;
@@ -161,14 +184,17 @@ impl <M: ReducePoly> GF2m<M> {
         #[cfg(not(target_arch = "x86_64"))]
         {
             // non-x86: always use fallback (or aarch64 PMULL path)
-            gf128_mul_fallback(a, b)
+            Self::gf128_mul_fallback(a, b)
         }
     }
 
     pub fn mul(self, rhs: Self) -> Self {
         //let result = mul_u128(self.value, rhs.value, M::MOD, M::DEG);
         let result = Self::gf128_mul_fast(self.value, rhs.value);
-        Self { value: result, _m: Default::default() }
+        Self {
+            value: result,
+            _m: Default::default(),
+        }
     }
 
     /// mul_assign with pointer-rhs, can be used for both (rhs being pointer and GF2m directly)
@@ -181,7 +207,10 @@ impl <M: ReducePoly> GF2m<M> {
     pub fn mul_borrowed(lhs: &Self, rhs: &Self) -> Self {
         //let result = mul_u128(lhs.value, rhs.value, M::MOD, M::DEG);
         let result = Self::gf128_mul_fast(lhs.value, rhs.value);
-        return Self { value: result, _m: Default::default() }
+        return Self {
+            value: result,
+            _m: Default::default(),
+        };
     }
 
     fn spread32(x: u32) -> u64 {
@@ -190,16 +219,16 @@ impl <M: ReducePoly> GF2m<M> {
         if is_x86_feature_detected!("bmi2") {
             unsafe {
                 // Keep bits masked with 1: 101010101010......1010
-                return core::arch::x86_64::_pdep_u64(x as u64, 0x5555_5555_5555_5555u64)
+                return core::arch::x86_64::_pdep_u64(x as u64, 0x5555_5555_5555_5555u64);
             }
         }
         // fallback for chips without BMI2 (older / other architecture)
         let mut x = (x as u64) << 32;
         x = (x | (x >> 16)) & 0x0000_FFFF_0000_FFFF;
-        x = (x | (x >> 8))  & 0x00FF_00FF_00FF_00FF;
-        x = (x | (x >> 4))  & 0x0F0F_0F0F_0F0F_0F0F;
-        x = (x | (x >> 2))  & 0x3333_3333_3333_3333;
-        x = (x | (x >> 1))  & 0x5555_5555_5555_5555;
+        x = (x | (x >> 8)) & 0x00FF_00FF_00FF_00FF;
+        x = (x | (x >> 4)) & 0x0F0F_0F0F_0F0F_0F0F;
+        x = (x | (x >> 2)) & 0x3333_3333_3333_3333;
+        x = (x | (x >> 1)) & 0x5555_5555_5555_5555;
         x
     }
 
@@ -231,7 +260,6 @@ impl <M: ReducePoly> GF2m<M> {
         Self::new(reduced)
     }
 
-
     pub fn square(&self) -> Self {
         //self * self
         // performance is SLIGHTLY better, talking again about 0.05 - 0.07 seconds at best for 10.000 cases
@@ -241,7 +269,7 @@ impl <M: ReducePoly> GF2m<M> {
 
     pub fn pow(mut self, mut exp: BigInt) -> Self {
         if exp.is_zero() {
-            return Self::one()
+            return Self::one();
         } else if exp.sign() == Sign::Minus {
             return self.pow(-exp).inv();
         }
@@ -295,7 +323,7 @@ fn mul_u128(mut lhs: u128, mut rhs: u128, poly: u128, degree: u32) -> u128 {
         if carry {
             rhs ^= poly;
         }
-        lhs >>=1;
+        lhs >>= 1;
     }
     z
 }
@@ -323,7 +351,10 @@ impl<M: ReducePoly> Add for GF2m<M> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Self { value: self.value ^ rhs.value, _m: Default::default() }
+        Self {
+            value: self.value ^ rhs.value,
+            _m: Default::default(),
+        }
     }
 }
 
@@ -371,7 +402,7 @@ impl<M: ReducePoly> BitXorAssign<u128> for GF2m<M> {
     }
 }
 
-impl<M:ReducePoly> MulAssign<GF2m<M>> for GF2m<M> {
+impl<M: ReducePoly> MulAssign<GF2m<M>> for GF2m<M> {
     fn mul_assign(&mut self, rhs: GF2m<M>) {
         self.inner_mul_assign(&rhs);
     }
@@ -408,8 +439,9 @@ impl<M: ReducePoly> PartialOrd for GF2m<M> {
 
 impl<M: ReducePoly> Serialize for GF2m<M> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         let b64 = BASE64_STANDARD.encode(self.value.reverse_bits().to_be_bytes());
         serializer.serialize_str(&b64)
     }
