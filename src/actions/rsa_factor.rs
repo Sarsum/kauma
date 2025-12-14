@@ -60,6 +60,8 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
             factored_moduli.push(i);
             // we know division hast rest zero, div_exact is faster
             q.assign(ni.div_exact_ref(&g));
+            // local performance boost of 10%, Kartfire said none? ;(
+            // mem::take places 0 into g and just adjusts the pointers - is faster than cloning
             factors.push(FactoredModul::from_unsorted(mem::take(&mut g), mem::take(&mut q)));
         }
     }
