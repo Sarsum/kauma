@@ -1,11 +1,10 @@
-use std::cmp::Ordering;
-
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use rug::{Assign, Integer};
 use serde::Serialize;
-use serde_json::{Number, Value, json};
+use serde_json::{Value, json};
 
 use crate::actions::ActionNumberInt;
+use crate::utils::to_unsigned_number;
 
 pub fn run_action(moduli: Vec<ActionNumberInt>) -> Result<Value> {
     // convert parsed BigInt into BugUint for faster operations
@@ -16,53 +15,17 @@ pub fn run_action(moduli: Vec<ActionNumberInt>) -> Result<Value> {
     Ok(json!({"factored_moduli": result}))
 }
 
-struct FactoredVal {
-    value: String,
-    is_small: bool,
-}
-
-impl FactoredVal {
-    fn from_int(num: &Integer) -> FactoredVal {
-        FactoredVal {
-            value: num.to_string_radix(16),
-            is_small: num.significant_bits() <= 31,
-        }
-    }
-
-    fn to_value(&self) -> Result<Value> {
-        return if self.is_small {
-            // more performant for large nums if we convert small nums to hex and back to num
-            Ok(Value::Number(Number::from(
-                i32::from_str_radix(&self.value, 16)
-                    .map_err(|_| anyhow!("rsa_factor: int to hex to int error"))?,
-            )))
-        } else {
-            let mut result = String::with_capacity(self.value.len() + 2);
-            result.push_str("0x");
-            result.push_str(&self.value);
-            Ok(Value::String(result))
-        };
-    }
-}
-
 struct FactoredModul {
-    p: FactoredVal,
-    q: FactoredVal,
+    p: Integer,
+    q: Integer
 }
 
 impl FactoredModul {
-    fn from_unsorted(a: &Integer, b: &Integer) -> FactoredModul {
+    fn from_unsorted(a: Integer, b: Integer) -> FactoredModul {
         return if a < b {
-            Self::from_sorted(a, b)
+            FactoredModul { p: a, q: b }
         } else {
-            Self::from_sorted(b, a)
-        };
-    }
-
-    fn from_sorted(p: &Integer, q: &Integer) -> FactoredModul {
-        FactoredModul {
-            p: FactoredVal::from_int(p),
-            q: FactoredVal::from_int(q),
+            FactoredModul { p: b, q: a }
         }
     }
 }
@@ -93,9 +56,10 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
         } else if g > 1 && &g < ni {
             // we have one shared factor, keep the id for the double shared factors
             factored_moduli.push(i);
+            let p = g.clone();
             // we know division hast rest zero, div_exact is faster
-            q.assign(ni.div_exact_ref(&g));
-            factors.push(FactoredModul::from_unsorted(&g, &q));
+            let q = Integer::from(ni.div_exact_ref(&g));
+            factors.push(FactoredModul::from_unsorted(p, q));
         }
     }
 
@@ -112,7 +76,7 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
 
             if g > 1 && &g < share {
                 q.assign(inner.div_exact_ref(&g));
-                factors.push(FactoredModul::from_unsorted(&g, &q));
+                factors.push(FactoredModul::from_unsorted(g.clone(), q.clone()));
                 factored_moduli.push(i_i);
                 unfactored_moduli.swap_remove(i);
             } else {
@@ -124,8 +88,6 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     // assign memory only if required
     if unfactored_moduli.len() > 0 {
         let mut factored = vec![false; moduli.len()];
-        // reusing this
-        let mut other_inner = Integer::new();
         // last check: two shared factors among the other unfactored moduli containg two shared
         'outer: for &o_i in unfactored_moduli.iter() {
             // factored o_i already because a previous moduli was a hit
@@ -143,13 +105,13 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
                 // finding a valid GCD means that inner and outer are a match
                 // we can calculate each others other factor at the same time
                 if g > 1 && &g < share {
-                    q.assign(share.div_exact_ref(&g));
-                    factors.push(FactoredModul::from_unsorted(&g, &q));
+                    let other_outer = Integer::from(share.div_exact_ref(&g));
+                    factors.push(FactoredModul::from_unsorted(g.clone(), other_outer));
                     factored[o_i] = true;
                     // only push k_i if we did not factore it already by a prior item
                     if !factored[k_i] {
-                        other_inner.assign(moduli[k_i].div_exact_ref(&g));
-                        factors.push(FactoredModul::from_unsorted(&g, &other_inner));
+                        let other_inner = Integer::from(moduli[k_i].div_exact_ref(&g));
+                        factors.push(FactoredModul::from_unsorted(g.clone(), other_inner));
                         factored[k_i] = true;
                     }
                     continue 'outer;
@@ -159,14 +121,8 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     }
 
     // compare first p's and then q's
-    factors.sort_unstable_by(|a, b| {
-        cmp_hex(&a.p.value, &b.p.value).then_with(|| cmp_hex(&a.q.value, &b.q.value))
-    });
+    factors.sort_by(|a, b| a.p.cmp(&b.p).then_with(|| a.q.cmp(&b.q)));
     Ok(factors)
-}
-
-fn cmp_hex(a: &str, b: &str) -> Ordering {
-    a.len().cmp(&b.len()).then_with(|| a.cmp(b))
 }
 
 // product tree with root at the front for easy position calculation
@@ -240,17 +196,12 @@ impl ProductTree {
 
 impl Serialize for FactoredModul {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let arr = [
-            self.p
-                .to_value()
-                .map_err(|e| <S::Error as serde::ser::Error>::custom(e.to_string()))?,
-            self.q
-                .to_value()
-                .map_err(|e| <S::Error as serde::ser::Error>::custom(e.to_string()))?,
-        ];
+        where
+            S: serde::Serializer {
+        let p_value = to_unsigned_number(&self.p);
+        let q_value = to_unsigned_number(&self.q);
+
+        let arr = [p_value, q_value];
         arr.serialize(serializer)
     }
 }
