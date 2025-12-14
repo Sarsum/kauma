@@ -1,3 +1,5 @@
+use std::mem;
+
 use anyhow::Result;
 use rug::{Assign, Integer};
 use serde::Serialize;
@@ -56,10 +58,9 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
         } else if g > 1 && &g < ni {
             // we have one shared factor, keep the id for the double shared factors
             factored_moduli.push(i);
-            let p = g.clone();
             // we know division hast rest zero, div_exact is faster
-            let q = Integer::from(ni.div_exact_ref(&g));
-            factors.push(FactoredModul::from_unsorted(p, q));
+            q.assign(ni.div_exact_ref(&g));
+            factors.push(FactoredModul::from_unsorted(mem::take(&mut g), mem::take(&mut q)));
         }
     }
 
@@ -76,7 +77,7 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
 
             if g > 1 && &g < share {
                 q.assign(inner.div_exact_ref(&g));
-                factors.push(FactoredModul::from_unsorted(g.clone(), q.clone()));
+                factors.push(FactoredModul::from_unsorted(mem::take(&mut g), mem::take(&mut q)));
                 factored_moduli.push(i_i);
                 unfactored_moduli.swap_remove(i);
             } else {
@@ -88,6 +89,8 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
     // assign memory only if required
     if unfactored_moduli.len() > 0 {
         let mut factored = vec![false; moduli.len()];
+        // reusing this
+        let mut other_inner = Integer::new();
         // last check: two shared factors among the other unfactored moduli containg two shared
         'outer: for &o_i in unfactored_moduli.iter() {
             // factored o_i already because a previous moduli was a hit
@@ -105,15 +108,16 @@ fn batch_gcd(moduli: &[Integer]) -> Result<Vec<FactoredModul>> {
                 // finding a valid GCD means that inner and outer are a match
                 // we can calculate each others other factor at the same time
                 if g > 1 && &g < share {
-                    let other_outer = Integer::from(share.div_exact_ref(&g));
-                    factors.push(FactoredModul::from_unsorted(g.clone(), other_outer));
-                    factored[o_i] = true;
+                    q.assign(share.div_exact_ref(&g));
                     // only push k_i if we did not factore it already by a prior item
                     if !factored[k_i] {
-                        let other_inner = Integer::from(moduli[k_i].div_exact_ref(&g));
-                        factors.push(FactoredModul::from_unsorted(g.clone(), other_inner));
+                        other_inner.assign(moduli[k_i].div_exact_ref(&g));
+                        factors.push(FactoredModul::from_unsorted(g.clone(), mem::take(&mut other_inner)));
                         factored[k_i] = true;
                     }
+                    // move after the if, because we might need g value
+                    factors.push(FactoredModul::from_unsorted(mem::take(&mut g), mem::take(&mut q)));
+                    factored[o_i] = true;
                     continue 'outer;
                 }
             }
